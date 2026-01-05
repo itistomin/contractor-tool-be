@@ -12,9 +12,9 @@ load_dotenv()
 app = FastAPI()
 
 
-@app.get("/health")
+@app.get("/api/health")
 async def get_health():
     return {"status": "ok"}
 
 
-app.include_router(authorization_router)
+app.include_router(authorization_router, prefix="/api")
