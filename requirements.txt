@@ -4,3 +4,9 @@ uvicorn
 dotenv
 sqlalchemy
 alembic
+PyJWT
+cryptography
+cognitojwt[async]
+
+ipython
+ipdb
