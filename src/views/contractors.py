@@ -16,10 +16,12 @@ router = APIRouter(
 )
 
 
-@router.get("/zip")
+@router.get("/")
 async def auth_user(
-    zip_code: int,
+    zip_code: str,
+    city: str | None = None,
+    fuel_type: str | None = None,
     db = Depends(get_db),
     # user = Depends(get_aws_user),
 ):
-    return await get_profile_by_zip(db, zip_code)
+    return await get_profile_by_zip(db, zip_code, city, fuel_type)
