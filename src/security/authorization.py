@@ -18,15 +18,11 @@ APP_CLIENT_ID = os.getenv('AWS_COGNITO_APP_CLIENT_ID')
 
 async def get_aws_user(
     access_token: Annotated[str, Header(alias="Cognito-Authorization")],
-    identification: Annotated[str | None, Header(alias="Cognito-ID")],
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        _: dict = await cognitojwt.decode_async(
-            access_token, REGION, USERPOOL_ID, app_client_id=APP_CLIENT_ID, testmode=False,
-        )
         identity_verification: dict = await cognitojwt.decode_async(
-            identification, REGION, USERPOOL_ID, app_client_id=APP_CLIENT_ID, testmode=False,
+            access_token, REGION, USERPOOL_ID, app_client_id=APP_CLIENT_ID, testmode=False,
         )
 
         user = await get_or_create_user(

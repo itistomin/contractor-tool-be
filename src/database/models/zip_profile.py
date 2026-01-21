@@ -1,7 +1,7 @@
 import datetime
 from uuid import uuid4
 
-from sqlalchemy import func
+from sqlalchemy import ForeignKey, func
 from sqlalchemy.orm import (
     Mapped, 
     mapped_column,
@@ -44,6 +44,7 @@ class Contract(Base):
     __tablename__ = "contracts"
 
     id: Mapped[str] = mapped_column(primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     
     zip: Mapped[str | None] = mapped_column(nullable=True)
     city: Mapped[str | None] = mapped_column(nullable=True)

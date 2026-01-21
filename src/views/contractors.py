@@ -18,7 +18,7 @@ router = APIRouter(
 
 
 @router.get("/")
-async def auth_user(
+async def get_contractor_profiles(
     zip_code: str,
     city: str | None = None,
     fuel_type: str | None = None,
