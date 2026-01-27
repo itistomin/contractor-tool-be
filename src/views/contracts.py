@@ -6,14 +6,11 @@ from fastapi import (
     UploadFile,
     File,
 )
-from pydantic import BaseModel
 from typing import Optional
-from pathlib import Path
-from datetime import datetime
+from pydantic import BaseModel
 
 from database.connection import get_db
 from database.queries.contract import create_contract, update_contract, get_contract_by_id, list_contracts as list_contracts_query
-from database.queries.contract_files import create_contract_file, list_contract_files
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.s3_service import S3Service
@@ -86,20 +83,9 @@ class ContractListItem(BaseModel):
     hancock_project_id: Optional[str] = None
     formatted_datetime: Optional[str] = None
     meeting_url: Optional[str] = None
+    inspection_doc: Optional[str] = None
+    invoice_doc: Optional[str] = None
     form_stage: str
-
-    class Config:
-        from_attributes = True
-
-
-class ContractFileResponse(BaseModel):
-    id: str
-    contract_id: str
-    file_name: str
-    file_ext: str
-    file_url: str
-    created_at: str
-    updated_at: str
 
     class Config:
         from_attributes = True
@@ -120,6 +106,8 @@ async def list_contracts(
             hancock_project_id=contract.hancock_project_id,
             formatted_datetime=format_datetime(contract.date, contract.start_at_time),
             meeting_url=contract.google_meet_url,
+            inspection_doc=contract.inspection_doc,
+            invoice_doc=contract.invoice_doc,
             form_stage=contract.form_stage,
         )
         for contract in contracts
@@ -154,6 +142,40 @@ async def get_all_contracts(
         )
         for contract in contracts
     ]
+
+
+@router.get("/{contract_id}", response_model=ContractResponse)
+async def get_contract(
+    contract_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get a single contract by ID with full data including inspection_doc and invoice_doc URLs."""
+    contract = await get_contract_by_id(db, contract_id)
+    if not contract:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Contract with id {contract_id} not found",
+        )
+    
+    return ContractResponse(
+        id=contract.id,
+        user_id=contract.user_id,
+        zip=contract.zip,
+        city=contract.city,
+        fuel_type=contract.fuel_type,
+        hancock_project_id=contract.hancock_project_id,
+        date=contract.date.isoformat() if contract.date else None,
+        start_at_time=contract.start_at_time.isoformat() if contract.start_at_time else None,
+        end_at_time=contract.end_at_time.isoformat() if contract.end_at_time else None,
+        formatted_datetime=format_datetime(contract.date, contract.start_at_time),
+        google_meet_url=contract.google_meet_url,
+        meeting_url=contract.google_meet_url,
+        inspection_doc=contract.inspection_doc,
+        invoice_doc=contract.invoice_doc,
+        form_stage=contract.form_stage,
+        created_at=contract.created_at.isoformat() if contract.created_at else "",
+        updated_at=contract.updated_at.isoformat() if contract.updated_at else "",
+    )
 
 
 @router.post("/", response_model=ContractResponse)
@@ -234,13 +256,13 @@ async def submit_contract(
     )
 
 
-@router.post("/{contract_id}/files", response_model=ContractFileResponse)
-async def upload_contract_file(
+@router.post("/{contract_id}/inspection-doc", response_model=ContractResponse)
+async def upload_inspection_doc(
     contract_id: str,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
 ):
-    """Upload a contract-related file to S3 and persist its URL in ContractFiles."""
+    """Upload inspection document for a contract. Stores the S3 URL in the contract's inspection_doc field."""
     contract = await get_contract_by_id(db, contract_id)
     if not contract:
         raise HTTPException(
@@ -261,40 +283,69 @@ async def upload_contract_file(
             detail="Empty file",
         )
 
-    s3 = S3Service()
-    file_url = s3.upload_file(
-        file_content=file_bytes,
-        file_name=file.filename,
-        folder=f"contracts/{contract_id}",
-        content_type=file.content_type,
-    )
+    try:
+        s3 = S3Service()
+        # Upload file to S3 with MIME type validation
+        file_url = s3.upload_file(
+            file_content=file_bytes,
+            file_name=file.filename,
+            folder=f"contracts/{contract_id}/inspection",
+            content_type=file.content_type,
+            validate_mime=True,
+        )
 
-    file_ext = Path(file.filename).suffix.lstrip(".")
-    contract_file = await create_contract_file(
-        db=db,
-        contract_id=contract_id,
-        file_name=file.filename,
-        file_ext=file_ext,
-        file_url=file_url,
-    )
+        # Update contract with the file URL
+        updated_contract = await update_contract(
+            db=db,
+            contract_id=contract_id,
+            inspection_doc=file_url,
+        )
 
-    return ContractFileResponse(
-        id=contract_file.id,
-        contract_id=contract_file.contract_id,
-        file_name=contract_file.file_name,
-        file_ext=contract_file.file_ext,
-        file_url=contract_file.file_url,
-        created_at=contract_file.created_at.isoformat() if contract_file.created_at else "",
-        updated_at=contract_file.updated_at.isoformat() if contract_file.updated_at else "",
-    )
+        if not updated_contract:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update contract with inspection document URL",
+            )
+
+        return ContractResponse(
+            id=updated_contract.id,
+            user_id=updated_contract.user_id,
+            zip=updated_contract.zip,
+            city=updated_contract.city,
+            fuel_type=updated_contract.fuel_type,
+            hancock_project_id=updated_contract.hancock_project_id,
+            date=updated_contract.date.isoformat() if updated_contract.date else None,
+            start_at_time=updated_contract.start_at_time.isoformat() if updated_contract.start_at_time else None,
+            end_at_time=updated_contract.end_at_time.isoformat() if updated_contract.end_at_time else None,
+            formatted_datetime=format_datetime(updated_contract.date, updated_contract.start_at_time),
+            google_meet_url=updated_contract.google_meet_url,
+            meeting_url=updated_contract.google_meet_url,
+            inspection_doc=updated_contract.inspection_doc,
+            invoice_doc=updated_contract.invoice_doc,
+            form_stage=updated_contract.form_stage,
+            created_at=updated_contract.created_at.isoformat() if updated_contract.created_at else "",
+            updated_at=updated_contract.updated_at.isoformat() if updated_contract.updated_at else "",
+        )
+    except ValueError as e:
+        # MIME type validation failed
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File '{file.filename}': {str(e)}",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload inspection document: {str(e)}",
+        )
 
 
-@router.get("/{contract_id}/files", response_model=list[ContractFileResponse])
-async def get_contract_files(
+@router.post("/{contract_id}/invoice-doc", response_model=ContractResponse)
+async def upload_invoice_doc(
     contract_id: str,
+    file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
 ):
-    """List files uploaded for a contract."""
+    """Upload invoice document for a contract. Stores the S3 URL in the contract's invoice_doc field."""
     contract = await get_contract_by_id(db, contract_id)
     if not contract:
         raise HTTPException(
@@ -302,16 +353,70 @@ async def get_contract_files(
             detail=f"Contract with id {contract_id} not found",
         )
 
-    files = await list_contract_files(db, contract_id)
-    return [
-        ContractFileResponse(
-            id=f.id,
-            contract_id=f.contract_id,
-            file_name=f.file_name,
-            file_ext=f.file_ext,
-            file_url=f.file_url,
-            created_at=f.created_at.isoformat() if f.created_at else "",
-            updated_at=f.updated_at.isoformat() if f.updated_at else "",
+    if not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing file name",
         )
-        for f in files
-    ]
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Empty file",
+        )
+
+    try:
+        s3 = S3Service()
+        # Upload file to S3 with MIME type validation
+        file_url = s3.upload_file(
+            file_content=file_bytes,
+            file_name=file.filename,
+            folder=f"contracts/{contract_id}/invoice",
+            content_type=file.content_type,
+            validate_mime=True,
+        )
+
+        # Update contract with the file URL
+        updated_contract = await update_contract(
+            db=db,
+            contract_id=contract_id,
+            invoice_doc=file_url,
+        )
+
+        if not updated_contract:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update contract with invoice document URL",
+            )
+
+        return ContractResponse(
+            id=updated_contract.id,
+            user_id=updated_contract.user_id,
+            zip=updated_contract.zip,
+            city=updated_contract.city,
+            fuel_type=updated_contract.fuel_type,
+            hancock_project_id=updated_contract.hancock_project_id,
+            date=updated_contract.date.isoformat() if updated_contract.date else None,
+            start_at_time=updated_contract.start_at_time.isoformat() if updated_contract.start_at_time else None,
+            end_at_time=updated_contract.end_at_time.isoformat() if updated_contract.end_at_time else None,
+            formatted_datetime=format_datetime(updated_contract.date, updated_contract.start_at_time),
+            google_meet_url=updated_contract.google_meet_url,
+            meeting_url=updated_contract.google_meet_url,
+            inspection_doc=updated_contract.inspection_doc,
+            invoice_doc=updated_contract.invoice_doc,
+            form_stage=updated_contract.form_stage,
+            created_at=updated_contract.created_at.isoformat() if updated_contract.created_at else "",
+            updated_at=updated_contract.updated_at.isoformat() if updated_contract.updated_at else "",
+        )
+    except ValueError as e:
+        # MIME type validation failed
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File '{file.filename}': {str(e)}",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload invoice document: {str(e)}",
+        )
