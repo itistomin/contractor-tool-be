@@ -1,15 +1,87 @@
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import Contract
 
 
-async def list_contracts(db: AsyncSession) -> list[Contract]:
-    """List all contracts ordered by updated_at descending."""
+async def list_contracts(
+    db: AsyncSession,
+    page: int = 1,
+    limit: int = 20,
+    date_from: str | None = None,
+    no_dates: bool | None = None
+) -> tuple[list[Contract], int]:
+    """
+    List contracts with pagination, ordered by date and start_at_time.
+    Ordering: items without date first, then ascending date and ascending time.
+    
+    Args:
+        db: Database session
+        page: Page number (1-indexed)
+        limit: Number of items per page
+        date_from: Optional date filter (ISO format) - only contracts with date >= date_from
+        no_dates: If True, only return contracts without dates (date is NULL).
+                  If False, only return contracts with dates (date IS NOT NULL).
+                  If None (default), return all contracts (with and without dates).
+        
+    Returns:
+        Tuple of (list of contracts, total count)
+    """
+    import datetime
+    
+    # Calculate offset
+    offset = (page - 1) * limit
+    
+    # Build query with optional filters
+    query = select(Contract)
+    count_query = select(func.count(Contract.id))
+    
+    # Apply no_dates filter
+    if no_dates is True:
+        # Only contracts without dates
+        query = query.where(Contract.date.is_(None))
+        count_query = count_query.where(Contract.date.is_(None))
+    elif no_dates is False:
+        # Only contracts with dates
+        query = query.where(Contract.date.isnot(None))
+        count_query = count_query.where(Contract.date.isnot(None))
+    
+    # Apply date_from filter (only if no_dates is not True)
+    if no_dates is not True and date_from:
+        # Parse date filter if provided
+        filter_date = None
+        try:
+            if isinstance(date_from, str):
+                try:
+                    filter_date = datetime.date.fromisoformat(date_from)
+                except ValueError:
+                    # Try parsing as datetime and extract date
+                    filter_date = datetime.datetime.fromisoformat(date_from).date()
+            else:
+                filter_date = date_from
+        except (ValueError, AttributeError):
+            # If date parsing fails, ignore the filter
+            filter_date = None
+        
+        if filter_date:
+            query = query.where(Contract.date >= filter_date)
+            count_query = count_query.where(Contract.date >= filter_date)
+    
+    count_result = await db.execute(count_query)
+    total_count = count_result.scalar_one()
+    
+    # Order by: items without date first (nulls_first), then ascending date and ascending time
     result = await db.execute(
-        select(Contract).order_by(Contract.updated_at.desc())
+        query.order_by(
+            Contract.date.asc().nulls_first(),
+            Contract.start_at_time.asc().nulls_last()
+        )
+        .limit(limit)
+        .offset(offset)
     )
-    return list(result.scalars().all())
+    
+    contracts = list(result.scalars().all())
+    return contracts, total_count
 
 
 async def get_contract_by_id(db: AsyncSession, contract_id: str) -> Contract | None:

@@ -5,6 +5,7 @@ from fastapi import (
     status,
     UploadFile,
     File,
+    Query,
 )
 from typing import Optional
 from pydantic import BaseModel
@@ -91,35 +92,66 @@ class ContractListItem(BaseModel):
         from_attributes = True
 
 
-@router.get("/list", response_model=list[ContractListItem])
+class PaginatedContractListResponse(BaseModel):
+    items: list[ContractListItem]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/list", response_model=PaginatedContractListResponse)
 async def list_contracts(
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    limit: int = Query(9, ge=1, le=100, description="Number of items per page"),
+    date_from: Optional[str] = Query(None, description="Filter contracts by date (ISO format, e.g., 2024-01-01). Only returns contracts with date >= date_from"),
+    no_dates: Optional[bool] = Query(None, description="If True, only return contracts without dates. If False, only return contracts with dates. If None (default), return all contracts."),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all contracts ordered by updated_at descending."""
-    contracts = await list_contracts_query(db)
-    return [
-        ContractListItem(
-            id=contract.id,
-            zip=contract.zip,
-            city=contract.city,
-            fuel_type=contract.fuel_type,
-            hancock_project_id=contract.hancock_project_id,
-            formatted_datetime=format_datetime(contract.date, contract.start_at_time),
-            meeting_url=contract.google_meet_url,
-            inspection_doc=contract.inspection_doc,
-            invoice_doc=contract.invoice_doc,
-            form_stage=contract.form_stage,
-        )
-        for contract in contracts
-    ]
+    """
+    List contracts with pagination.
+    Ordering: items without date first, then ascending date and ascending time.
+    Returns 9 items per page by default.
+    By default, shows all contracts (with and without dates).
+    """
+    contracts, total_count = await list_contracts_query(db, page=page, limit=limit, date_from=date_from, no_dates=no_dates)
+    
+    # Calculate total pages
+    total_pages = (total_count + limit - 1) // limit if total_count > 0 else 0
+    
+    return PaginatedContractListResponse(
+        items=[
+            ContractListItem(
+                id=contract.id,
+                zip=contract.zip,
+                city=contract.city,
+                fuel_type=contract.fuel_type,
+                hancock_project_id=contract.hancock_project_id,
+                formatted_datetime=format_datetime(contract.date, contract.start_at_time),
+                meeting_url=contract.google_meet_url,
+                inspection_doc=contract.inspection_doc,
+                invoice_doc=contract.invoice_doc,
+                form_stage=contract.form_stage,
+            )
+            for contract in contracts
+        ],
+        total=total_count,
+        page=page,
+        limit=limit,
+        total_pages=total_pages,
+    )
 
 
 @router.get("/", response_model=list[ContractResponse])
 async def get_all_contracts(
     db: AsyncSession = Depends(get_db),
 ):
-    """Get all contracts with full data ordered by updated_at descending."""
-    contracts = await list_contracts_query(db)
+    """Get all contracts with full data ordered by date and start_at_time descending."""
+    # Get all contracts (using a large limit to get all)
+    contracts, _ = await list_contracts_query(db, page=1, limit=10000)
     return [
         ContractResponse(
             id=contract.id,
