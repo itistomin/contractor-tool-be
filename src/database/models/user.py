@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from sqlalchemy import func
+from sqlalchemy import ForeignKey, func
 from sqlalchemy.orm import (
     Mapped, 
     mapped_column,
@@ -15,3 +15,4 @@ class User(Base):
     id: Mapped[str] = mapped_column(primary_key=True, default=lambda: str(uuid4()))
     email: Mapped[str] = mapped_column(unique=True)
     full_name: Mapped[str] = mapped_column(unique=True)
+    department_id: Mapped[str | None] = mapped_column(ForeignKey("departments.id"), nullable=True)

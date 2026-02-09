@@ -30,7 +30,7 @@ async def get_contractor_profiles(
 
 @router.get("/agencies")
 async def get_agencies(
-    agency_code: str,
+    zip_code: str,
     db = Depends(get_db),
 ):
-    return await get_agencies_query(db, agency_code)
+    return await get_agencies_query(db, zip_code)
