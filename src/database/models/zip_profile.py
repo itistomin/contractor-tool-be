@@ -61,3 +61,4 @@ class Contract(Base):
     invoice_doc: Mapped[str | None] = mapped_column(nullable=True)
 
     form_stage: Mapped[str] = mapped_column(default="project_id") # project_id, schedule, documents, closed
+    r2: Mapped[bool] = mapped_column(default=False)

@@ -51,6 +51,7 @@ class ContractRequest(BaseModel):
     inspection_doc: Optional[str] = None
     invoice_doc: Optional[str] = None
     form_stage: Optional[str] = None
+    r2: Optional[bool] = None
 
 
 class ContractResponse(BaseModel):
@@ -69,6 +70,7 @@ class ContractResponse(BaseModel):
     inspection_doc: Optional[str] = None
     invoice_doc: Optional[str] = None
     form_stage: str
+    r2: bool
     created_at: str
     updated_at: str
 
@@ -87,6 +89,7 @@ class ContractListItem(BaseModel):
     inspection_doc: Optional[str] = None
     invoice_doc: Optional[str] = None
     form_stage: str
+    r2: bool
 
     class Config:
         from_attributes = True
@@ -135,6 +138,7 @@ async def list_contracts(
                 inspection_doc=contract.inspection_doc,
                 invoice_doc=contract.invoice_doc,
                 form_stage=contract.form_stage,
+                r2=contract.r2 if contract.r2 is not None else False,
             )
             for contract in contracts
         ],
@@ -169,6 +173,7 @@ async def get_all_contracts(
             inspection_doc=contract.inspection_doc,
             invoice_doc=contract.invoice_doc,
             form_stage=contract.form_stage,
+            r2=contract.r2 if contract.r2 is not None else False,
             created_at=contract.created_at.isoformat() if contract.created_at else "",
             updated_at=contract.updated_at.isoformat() if contract.updated_at else "",
         )
@@ -205,6 +210,7 @@ async def get_contract(
         inspection_doc=contract.inspection_doc,
         invoice_doc=contract.invoice_doc,
         form_stage=contract.form_stage,
+        r2=contract.r2 if contract.r2 is not None else False,
         created_at=contract.created_at.isoformat() if contract.created_at else "",
         updated_at=contract.updated_at.isoformat() if contract.updated_at else "",
     )
@@ -221,6 +227,19 @@ async def submit_contract(
     - If contract_id is not provided, create a new contract.
     """
     if contract_data.contract_id:
+        # First, get the existing contract to verify ownership
+        existing_contract = await get_contract_by_id(db, contract_data.contract_id)
+        if not existing_contract:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Contract with id {contract_data.contract_id} not found",
+            )
+        # Verify that the contract belongs to the user_id BEFORE updating
+        if existing_contract.user_id != contract_data.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Contract does not belong to the specified user",
+            )
         # Update existing contract
         contract = await update_contract(
             db=db,
@@ -236,18 +255,8 @@ async def submit_contract(
             inspection_doc=contract_data.inspection_doc,
             invoice_doc=contract_data.invoice_doc,
             form_stage=contract_data.form_stage,
+            r2=contract_data.r2,
         )
-        if not contract:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Contract with id {contract_data.contract_id} not found",
-            )
-        # Verify that the contract belongs to the user_id
-        if contract.user_id != contract_data.user_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Contract does not belong to the specified user",
-            )
     else:
         # Create new contract
         contract = await create_contract(
@@ -264,6 +273,7 @@ async def submit_contract(
             inspection_doc=contract_data.inspection_doc,
             invoice_doc=contract_data.invoice_doc,
             form_stage=contract_data.form_stage,
+            r2=contract_data.r2,
         )
     
     # Convert to response model
@@ -283,6 +293,7 @@ async def submit_contract(
         inspection_doc=contract.inspection_doc,
         invoice_doc=contract.invoice_doc,
         form_stage=contract.form_stage,
+        r2=contract.r2 if contract.r2 is not None else False,
         created_at=contract.created_at.isoformat() if contract.created_at else "",
         updated_at=contract.updated_at.isoformat() if contract.updated_at else "",
     )
@@ -355,6 +366,7 @@ async def upload_inspection_doc(
             inspection_doc=updated_contract.inspection_doc,
             invoice_doc=updated_contract.invoice_doc,
             form_stage=updated_contract.form_stage,
+            r2=updated_contract.r2 if updated_contract.r2 is not None else False,
             created_at=updated_contract.created_at.isoformat() if updated_contract.created_at else "",
             updated_at=updated_contract.updated_at.isoformat() if updated_contract.updated_at else "",
         )
@@ -438,6 +450,7 @@ async def upload_invoice_doc(
             inspection_doc=updated_contract.inspection_doc,
             invoice_doc=updated_contract.invoice_doc,
             form_stage=updated_contract.form_stage,
+            r2=updated_contract.r2 if updated_contract.r2 is not None else False,
             created_at=updated_contract.created_at.isoformat() if updated_contract.created_at else "",
             updated_at=updated_contract.updated_at.isoformat() if updated_contract.updated_at else "",
         )

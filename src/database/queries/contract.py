@@ -106,6 +106,7 @@ async def create_contract(
     inspection_doc: str | None = None,
     invoice_doc: str | None = None,
     form_stage: str | None = None,
+    r2: bool | None = None,
 ) -> Contract:
     """Create a new contract."""
     import datetime
@@ -146,20 +147,25 @@ async def create_contract(
         else:
             parsed_end_time = end_at_time
     
-    contract = Contract(
-        user_id=user_id,
-        zip=zip,
-        city=city,
-        fuel_type=fuel_type,
-        hancock_project_id=hancock_project_id,
-        date=parsed_date,
-        start_at_time=parsed_start_time,
-        end_at_time=parsed_end_time,
-        google_meet_url=google_meet_url,
-        inspection_doc=inspection_doc,
-        invoice_doc=invoice_doc,
-        form_stage=form_stage or "project_id",
-    )
+    contract_kwargs = {
+        "user_id": user_id,
+        "zip": zip,
+        "city": city,
+        "fuel_type": fuel_type,
+        "hancock_project_id": hancock_project_id,
+        "date": parsed_date,
+        "start_at_time": parsed_start_time,
+        "end_at_time": parsed_end_time,
+        "google_meet_url": google_meet_url,
+        "inspection_doc": inspection_doc,
+        "invoice_doc": invoice_doc,
+        "form_stage": form_stage or "project_id",
+    }
+    # Only set r2 if explicitly provided, otherwise use model default (False)
+    if r2 is not None:
+        contract_kwargs["r2"] = r2
+    
+    contract = Contract(**contract_kwargs)
     db.add(contract)
     await db.commit()
     await db.refresh(contract)
@@ -180,6 +186,7 @@ async def update_contract(
     inspection_doc: str | None = None,
     invoice_doc: str | None = None,
     form_stage: str | None = None,
+    r2: bool | None = None,
 ) -> Contract | None:
     """Update an existing contract with only provided fields."""
     import datetime
@@ -240,6 +247,8 @@ async def update_contract(
         update_data["invoice_doc"] = invoice_doc
     if form_stage is not None:
         update_data["form_stage"] = form_stage
+    if r2 is not None:
+        update_data["r2"] = r2
     
     if not update_data:
         return contract
