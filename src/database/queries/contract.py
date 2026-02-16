@@ -1,7 +1,7 @@
-from sqlalchemy import select, update, func
+from sqlalchemy import distinct, select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.models import Contract
+from database.models import Contract, ZipProfiles
 
 
 async def list_contracts(
@@ -262,3 +262,83 @@ async def update_contract(
     await db.commit()
     # Get the updated contract
     return await get_contract_by_id(db, contract_id)
+
+
+async def update_contract_status(
+    db: AsyncSession,
+    contract_id: str,
+    status: str,
+) -> Contract | None:
+    """Update contract status to 'cancelled' or 'completed'. Returns None if contract not found or status invalid."""
+    if status not in ("cancelled", "completed"):
+        return None
+    contract = await get_contract_by_id(db, contract_id)
+    if not contract:
+        return None
+    await db.execute(
+        update(Contract).where(Contract.id == contract_id).values(status=status)
+    )
+    await db.commit()
+    return await get_contract_by_id(db, contract_id)
+
+
+async def get_contract_statistics(
+    db: AsyncSession,
+) -> dict:
+    """
+    Return contract statistics: total count, counts per form_stage, per status,
+    per zip_code, and per proceed_reason (via zip_profiles join).
+    Returns:
+        {
+            "total": int,
+            "by_form_stage": { "<stage>": int, ... },
+            "by_status": { "open": int, "cancelled": int, "completed": int },
+            "by_zip_code": { "<zip>": int, ... },
+            "by_city": { "<city>": int, ... },
+            "by_proceed_reason": { "<reason>": int, ... }
+        }
+    """
+    total_result = await db.execute(select(func.count(Contract.id)))
+    total = total_result.scalar_one() or 0
+
+    form_stage_result = await db.execute(
+        select(Contract.form_stage, func.count(Contract.id)).group_by(Contract.form_stage)
+    )
+    by_form_stage = {row[0] or "": row[1] for row in form_stage_result.all()}
+
+    status_result = await db.execute(
+        select(Contract.status, func.count(Contract.id)).group_by(Contract.status)
+    )
+    status_rows = {row[0] or "open": row[1] for row in status_result.all()}
+    by_status = {
+        "open": status_rows.get("open", 0),
+        "cancelled": status_rows.get("cancelled", 0),
+        "completed": status_rows.get("completed", 0),
+    }
+
+    zip_result = await db.execute(
+        select(Contract.zip, func.count(Contract.id)).group_by(Contract.zip)
+    )
+    by_zip_code = {row[0] or "": row[1] for row in zip_result.all()}
+
+    city_result = await db.execute(
+        select(Contract.city, func.count(Contract.id)).group_by(Contract.city)
+    )
+    by_city = {row[0] or "": row[1] for row in city_result.all()}
+
+    proceed_reason_result = await db.execute(
+        select(ZipProfiles.proceed_reason, func.count(distinct(Contract.id)))
+        .select_from(Contract)
+        .join(ZipProfiles, Contract.zip == ZipProfiles.zip_code)
+        .group_by(ZipProfiles.proceed_reason)
+    )
+    by_proceed_reason = {row[0] or "": row[1] for row in proceed_reason_result.all()}
+
+    return {
+        "total": total,
+        "by_form_stage": by_form_stage,
+        "by_status": by_status,
+            "by_zip_code": by_zip_code,
+            "by_city": by_city,
+            "by_proceed_reason": by_proceed_reason,
+    }

@@ -62,3 +62,4 @@ class Contract(Base):
 
     form_stage: Mapped[str] = mapped_column(default="project_id") # project_id, schedule, documents, closed
     r2: Mapped[bool] = mapped_column(default=False)
+    status: Mapped[str] = mapped_column(default="open")  # open, cancelled, completed

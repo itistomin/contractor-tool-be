@@ -7,11 +7,18 @@ from fastapi import (
     File,
     Query,
 )
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel
 
 from database.connection import get_db
-from database.queries.contract import create_contract, update_contract, get_contract_by_id, list_contracts as list_contracts_query
+from database.queries.contract import (
+    create_contract,
+    update_contract,
+    get_contract_by_id,
+    list_contracts as list_contracts_query,
+    update_contract_status,
+    get_contract_statistics,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.s3_service import S3Service
@@ -71,6 +78,7 @@ class ContractResponse(BaseModel):
     invoice_doc: Optional[str] = None
     form_stage: str
     r2: bool
+    status: str
     created_at: str
     updated_at: str
 
@@ -90,9 +98,14 @@ class ContractListItem(BaseModel):
     invoice_doc: Optional[str] = None
     form_stage: str
     r2: bool
+    status: str
 
     class Config:
         from_attributes = True
+
+
+class PatchContractStatusRequest(BaseModel):
+    status: Literal["cancelled", "completed"]
 
 
 class PaginatedContractListResponse(BaseModel):
@@ -104,6 +117,31 @@ class PaginatedContractListResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ContractStatisticsResponse(BaseModel):
+    total: int
+    by_form_stage: dict[str, int]
+    by_status: dict[str, int]
+    by_zip_code: dict[str, int]
+    by_city: dict[str, int]
+    by_proceed_reason: dict[str, int]
+
+
+@router.get("/statistics", response_model=ContractStatisticsResponse)
+async def get_statistics(
+    db: AsyncSession = Depends(get_db),
+):
+    """Return contract statistics: total count, counts per form stage, status, zip code, and proceed_reason."""
+    stats = await get_contract_statistics(db)
+    return ContractStatisticsResponse(
+        total=stats["total"],
+        by_form_stage=stats["by_form_stage"],
+        by_status=stats["by_status"],
+        by_zip_code=stats["by_zip_code"],
+        by_city=stats["by_city"],
+        by_proceed_reason=stats["by_proceed_reason"],
+    )
 
 
 @router.get("/list", response_model=PaginatedContractListResponse)
@@ -139,6 +177,7 @@ async def list_contracts(
                 invoice_doc=contract.invoice_doc,
                 form_stage=contract.form_stage,
                 r2=contract.r2 if contract.r2 is not None else False,
+                status=contract.status or "open",
             )
             for contract in contracts
         ],
@@ -174,6 +213,7 @@ async def get_all_contracts(
             invoice_doc=contract.invoice_doc,
             form_stage=contract.form_stage,
             r2=contract.r2 if contract.r2 is not None else False,
+            status=contract.status or "open",
             created_at=contract.created_at.isoformat() if contract.created_at else "",
             updated_at=contract.updated_at.isoformat() if contract.updated_at else "",
         )
@@ -211,6 +251,43 @@ async def get_contract(
         invoice_doc=contract.invoice_doc,
         form_stage=contract.form_stage,
         r2=contract.r2 if contract.r2 is not None else False,
+        status=contract.status or "open",
+        created_at=contract.created_at.isoformat() if contract.created_at else "",
+        updated_at=contract.updated_at.isoformat() if contract.updated_at else "",
+    )
+
+
+@router.patch("/{contract_id}/status", response_model=ContractResponse)
+async def patch_contract_status(
+    contract_id: str,
+    body: PatchContractStatusRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update contract status to 'cancelled' or 'completed'."""
+    contract = await update_contract_status(db, contract_id, body.status)
+    if not contract:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Contract with id {contract_id} not found or invalid status",
+        )
+    return ContractResponse(
+        id=contract.id,
+        user_id=contract.user_id,
+        zip=contract.zip,
+        city=contract.city,
+        fuel_type=contract.fuel_type,
+        hancock_project_id=contract.hancock_project_id,
+        date=contract.date.isoformat() if contract.date else None,
+        start_at_time=contract.start_at_time.isoformat() if contract.start_at_time else None,
+        end_at_time=contract.end_at_time.isoformat() if contract.end_at_time else None,
+        formatted_datetime=format_datetime(contract.date, contract.start_at_time),
+        google_meet_url=contract.google_meet_url,
+        meeting_url=contract.google_meet_url,
+        inspection_doc=contract.inspection_doc,
+        invoice_doc=contract.invoice_doc,
+        form_stage=contract.form_stage,
+        r2=contract.r2 if contract.r2 is not None else False,
+        status=contract.status or "open",
         created_at=contract.created_at.isoformat() if contract.created_at else "",
         updated_at=contract.updated_at.isoformat() if contract.updated_at else "",
     )
@@ -294,6 +371,7 @@ async def submit_contract(
         invoice_doc=contract.invoice_doc,
         form_stage=contract.form_stage,
         r2=contract.r2 if contract.r2 is not None else False,
+        status=contract.status or "open",
         created_at=contract.created_at.isoformat() if contract.created_at else "",
         updated_at=contract.updated_at.isoformat() if contract.updated_at else "",
     )
@@ -367,6 +445,7 @@ async def upload_inspection_doc(
             invoice_doc=updated_contract.invoice_doc,
             form_stage=updated_contract.form_stage,
             r2=updated_contract.r2 if updated_contract.r2 is not None else False,
+            status=updated_contract.status or "open",
             created_at=updated_contract.created_at.isoformat() if updated_contract.created_at else "",
             updated_at=updated_contract.updated_at.isoformat() if updated_contract.updated_at else "",
         )
@@ -451,6 +530,7 @@ async def upload_invoice_doc(
             invoice_doc=updated_contract.invoice_doc,
             form_stage=updated_contract.form_stage,
             r2=updated_contract.r2 if updated_contract.r2 is not None else False,
+            status=updated_contract.status or "open",
             created_at=updated_contract.created_at.isoformat() if updated_contract.created_at else "",
             updated_at=updated_contract.updated_at.isoformat() if updated_contract.updated_at else "",
         )

@@ -25,8 +25,15 @@ async def get_aws_user(
             access_token, REGION, USERPOOL_ID, app_client_id=APP_CLIENT_ID, testmode=False,
         )
 
+        groups: list = list(identity_verification.get("cognito:groups") or [])
+        cognito_group: str | None = groups[0] if groups else None
+
         user = await get_or_create_user(
-            db, email=identity_verification['email'], username=identity_verification['cognito:username'])
+            db,
+            email=identity_verification["email"],
+            username=identity_verification["cognito:username"],
+            cognito_group=cognito_group,
+        )
         return user
     except cognitojwt.CognitoJWTException as e:
         raise HTTPException(

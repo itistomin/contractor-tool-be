@@ -1,8 +1,8 @@
 from uuid import uuid4
 
-from sqlalchemy import ForeignKey, func
+from sqlalchemy import ForeignKey
 from sqlalchemy.orm import (
-    Mapped, 
+    Mapped,
     mapped_column,
 )
 
@@ -16,3 +16,4 @@ class User(Base):
     email: Mapped[str] = mapped_column(unique=True)
     full_name: Mapped[str] = mapped_column(unique=True)
     department_id: Mapped[str | None] = mapped_column(ForeignKey("departments.id"), nullable=True)
+    cognito_group: Mapped[str | None] = mapped_column(nullable=True)
