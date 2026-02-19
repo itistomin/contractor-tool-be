@@ -52,7 +52,8 @@ class Contract(Base):
     sponsored_by: Mapped[str | None] = mapped_column(nullable=True)
     
     hancock_project_id: Mapped[str | None] = mapped_column(nullable=True)
-    
+    auditor_id: Mapped[str | None] = mapped_column(nullable=True)
+
     date: Mapped[datetime.date | None] = mapped_column(nullable=True)
     start_at_time: Mapped[datetime.time | None] = mapped_column(nullable=True)
     end_at_time: Mapped[datetime.time | None] = mapped_column(nullable=True)

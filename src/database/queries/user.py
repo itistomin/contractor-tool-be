@@ -11,6 +11,14 @@ async def get_user_by_email(db: AsyncSession, email: str) -> User:
     return result.scalar_one_or_none()
 
 
+async def get_users_by_cognito_group(db: AsyncSession, group_name: str) -> list[User]:
+    """Return all users whose cognito_group equals the given group name."""
+    result = await db.execute(
+        select(User).where(User.cognito_group == group_name)
+    )
+    return list(result.scalars().all())
+
+
 async def create_user(
     db: AsyncSession,
     email: str,

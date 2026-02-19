@@ -6,6 +6,7 @@ from views import (
     contractors_router,
     contracts_router,
     departments_router,
+    users_router,
 )
 
 
@@ -24,3 +25,4 @@ app.include_router(authorization_router, prefix="/api")
 app.include_router(contractors_router, prefix="/api")
 app.include_router(contracts_router, prefix="/api")
 app.include_router(departments_router, prefix="/api")
+app.include_router(users_router, prefix="/api")

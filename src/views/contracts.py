@@ -15,6 +15,7 @@ from database.queries.contract import (
     create_contract,
     update_contract,
     get_contract_by_id,
+    get_auditor_schedule_for_date,
     list_contracts as list_contracts_query,
     update_contract_status,
     get_contract_statistics,
@@ -34,13 +35,30 @@ def format_datetime(date_obj, time_obj) -> Optional[str]:
     """Format date and time objects into a single readable string (e.g., 'January 21, 2026 at 2:30 PM')."""
     if not date_obj:
         return None
-    
+
     date_str = date_obj.strftime("%B %d, %Y")
-    
+
     if time_obj:
         time_str = time_obj.strftime("%I:%M %p").lstrip("0")
         return f"{date_str} at {time_str}"
-    
+
+    return date_str
+
+
+def format_datetime_range(
+    date_obj, start_time_obj, end_time_obj
+) -> Optional[str]:
+    """Format date with start and end time as a single string (e.g., 'February 19, 2026 at 9:00 AM – 10:00 AM')."""
+    if not date_obj:
+        return None
+    date_str = date_obj.strftime("%B %d, %Y")
+    if start_time_obj and end_time_obj:
+        start_str = start_time_obj.strftime("%I:%M %p").lstrip("0")
+        end_str = end_time_obj.strftime("%I:%M %p").lstrip("0")
+        return f"{date_str} at {start_str} – {end_str}"
+    if start_time_obj:
+        start_str = start_time_obj.strftime("%I:%M %p").lstrip("0")
+        return f"{date_str} at {start_str}"
     return date_str
 
 
@@ -51,6 +69,7 @@ class ContractRequest(BaseModel):
     city: Optional[str] = None
     fuel_type: Optional[str] = None
     hancock_project_id: Optional[str] = None
+    auditor_id: Optional[str] = None
     date: Optional[str] = None  # ISO format date string
     start_at_time: Optional[str] = None  # ISO format time string
     end_at_time: Optional[str] = None  # ISO format time string
@@ -69,6 +88,7 @@ class ContractResponse(BaseModel):
     fuel_type: Optional[str] = None
     sponsored_by: Optional[str] = None
     hancock_project_id: Optional[str] = None
+    auditor_id: Optional[str] = None
     date: Optional[str] = None
     start_at_time: Optional[str] = None
     end_at_time: Optional[str] = None
@@ -94,6 +114,7 @@ class ContractListItem(BaseModel):
     fuel_type: Optional[str] = None
     sponsored_by: Optional[str] = None
     hancock_project_id: Optional[str] = None
+    auditor_id: Optional[str] = None
     formatted_datetime: Optional[str] = None
     meeting_url: Optional[str] = None
     inspection_doc: Optional[str] = None
@@ -153,6 +174,35 @@ async def get_statistics(
     )
 
 
+class AuditorScheduleSlot(BaseModel):
+    """A single contract slot in an auditor's schedule."""
+    contract_id: str
+    formatted_time_range: Optional[str] = None  # e.g. "February 19, 2026 at 9:00 AM – 10:00 AM"
+    zip: Optional[str] = None
+    city: Optional[str] = None
+
+
+class AuditorScheduleEntry(BaseModel):
+    """One auditor's schedule for the day: auditor id/name and ordered list of slots."""
+    auditor_id: Optional[str] = None
+    auditor_name: Optional[str] = None
+    contracts: list[str] = []
+
+
+class AuditorScheduleResponse(BaseModel):
+    items: list[AuditorScheduleEntry]
+
+
+@router.get("/auditor-schedule", response_model=AuditorScheduleResponse)
+async def get_auditor_schedule(
+    date: str = Query(..., description="Date in ISO format (YYYY-MM-DD)"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get auditor schedule for a given date: list of auditors with their ordered contract slots for that day."""
+    schedule = await get_auditor_schedule_for_date(db, date)
+    return {"items": schedule}
+
+
 @router.get("/list", response_model=PaginatedContractListResponse)
 async def list_contracts(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
@@ -181,6 +231,7 @@ async def list_contracts(
                 fuel_type=contract.fuel_type,
                 sponsored_by=contract.sponsored_by or "other",
                 hancock_project_id=contract.hancock_project_id,
+                auditor_id=contract.auditor_id,
                 formatted_datetime=format_datetime(contract.date, contract.start_at_time),
                 meeting_url=contract.google_meet_url,
                 inspection_doc=contract.inspection_doc,
@@ -214,6 +265,7 @@ async def get_all_contracts(
             fuel_type=contract.fuel_type,
             sponsored_by=contract.sponsored_by or "other",
             hancock_project_id=contract.hancock_project_id,
+            auditor_id=contract.auditor_id,
             date=contract.date.isoformat() if contract.date else None,
             start_at_time=contract.start_at_time.isoformat() if contract.start_at_time else None,
             end_at_time=contract.end_at_time.isoformat() if contract.end_at_time else None,
@@ -253,6 +305,7 @@ async def get_contract(
         fuel_type=contract.fuel_type,
         sponsored_by=contract.sponsored_by or "other",
         hancock_project_id=contract.hancock_project_id,
+        auditor_id=contract.auditor_id,
         date=contract.date.isoformat() if contract.date else None,
         start_at_time=contract.start_at_time.isoformat() if contract.start_at_time else None,
         end_at_time=contract.end_at_time.isoformat() if contract.end_at_time else None,
@@ -290,6 +343,7 @@ async def patch_contract_status(
         fuel_type=contract.fuel_type,
         sponsored_by=contract.sponsored_by or "other",
         hancock_project_id=contract.hancock_project_id,
+        auditor_id=contract.auditor_id,
         date=contract.date.isoformat() if contract.date else None,
         start_at_time=contract.start_at_time.isoformat() if contract.start_at_time else None,
         end_at_time=contract.end_at_time.isoformat() if contract.end_at_time else None,
@@ -330,8 +384,8 @@ async def submit_contract(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Contract does not belong to the specified user",
             )
-        # Update existing contract
-        contract = await update_contract(
+        # Update existing contract (pass auditor_id only when present in body so null can clear it)
+        update_kwargs = dict(
             db=db,
             contract_id=contract_data.contract_id,
             zip=contract_data.zip,
@@ -347,6 +401,9 @@ async def submit_contract(
             form_stage=contract_data.form_stage,
             r2=contract_data.r2,
         )
+        if "auditor_id" in contract_data.model_dump(exclude_unset=True):
+            update_kwargs["auditor_id"] = contract_data.auditor_id
+        contract = await update_contract(**update_kwargs)
     else:
         # Create new contract
         contract = await create_contract(
@@ -356,6 +413,7 @@ async def submit_contract(
             city=contract_data.city,
             fuel_type=contract_data.fuel_type,
             hancock_project_id=contract_data.hancock_project_id,
+            auditor_id=contract_data.auditor_id,
             date=contract_data.date,
             start_at_time=contract_data.start_at_time,
             end_at_time=contract_data.end_at_time,
@@ -375,6 +433,7 @@ async def submit_contract(
         fuel_type=contract.fuel_type,
         sponsored_by=contract.sponsored_by or "other",
         hancock_project_id=contract.hancock_project_id,
+        auditor_id=contract.auditor_id,
         date=contract.date.isoformat() if contract.date else None,
         start_at_time=contract.start_at_time.isoformat() if contract.start_at_time else None,
         end_at_time=contract.end_at_time.isoformat() if contract.end_at_time else None,
@@ -450,6 +509,7 @@ async def upload_inspection_doc(
             fuel_type=updated_contract.fuel_type,
             sponsored_by=updated_contract.sponsored_by or "other",
             hancock_project_id=updated_contract.hancock_project_id,
+            auditor_id=updated_contract.auditor_id,
             date=updated_contract.date.isoformat() if updated_contract.date else None,
             start_at_time=updated_contract.start_at_time.isoformat() if updated_contract.start_at_time else None,
             end_at_time=updated_contract.end_at_time.isoformat() if updated_contract.end_at_time else None,
@@ -536,6 +596,7 @@ async def upload_invoice_doc(
             fuel_type=updated_contract.fuel_type,
             sponsored_by=updated_contract.sponsored_by or "other",
             hancock_project_id=updated_contract.hancock_project_id,
+            auditor_id=updated_contract.auditor_id,
             date=updated_contract.date.isoformat() if updated_contract.date else None,
             start_at_time=updated_contract.start_at_time.isoformat() if updated_contract.start_at_time else None,
             end_at_time=updated_contract.end_at_time.isoformat() if updated_contract.end_at_time else None,

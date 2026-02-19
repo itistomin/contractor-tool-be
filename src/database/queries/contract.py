@@ -1,7 +1,9 @@
+import datetime as dt
+
 from sqlalchemy import distinct, select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.models import Contract, ZipProfiles
+from database.models import Contract, User, ZipProfiles
 
 
 async def list_contracts(
@@ -92,6 +94,46 @@ async def get_contract_by_id(db: AsyncSession, contract_id: str) -> Contract | N
     return result.scalar_one_or_none()
 
 
+async def get_auditor_schedule_for_date(
+    db: AsyncSession,
+    date: str,
+) -> list[dict]:
+    """
+    Get schedule of auditors for a given date.
+    Returns list of { "auditor_id": str | None, "auditor_name": str | None, "slots": list[Contract] }
+    with slots ordered by start_at_time. Contracts with no auditor_id are grouped under auditor_id None.
+    """
+    # Fetch users with type Auditors
+    auditors_result = await db.execute(select(User).where(User.cognito_group == "Auditors"))
+    auditors = list(auditors_result.scalars().all())
+
+    # Fetch contracts by auditor_id and date, group by auditor_id
+    if isinstance(date, str):
+        date = dt.date.fromisoformat(date)
+    contracts_result = await db.execute(
+        select(Contract)
+        .where(Contract.date == date)
+        .order_by(Contract.start_at_time.asc().nulls_last())
+    )
+    contracts = list(contracts_result.scalars().all())
+
+    auditors_schedule = []
+    for auditor in auditors:
+        auditor_contracts = [
+            f"{date.strftime('%B %d, %Y')} at {contract.start_at_time.strftime('%I:%M %p')} - {contract.end_at_time.strftime('%I:%M %p')}"
+            for contract in contracts if contract.auditor_id == auditor.id
+        ]
+
+        auditors_schedule.append({
+            "auditor_id": auditor.id,
+            "auditor_name": auditor.full_name,
+            "auditor_email": auditor.email,
+            "contracts": auditor_contracts,
+        })
+
+    return auditors_schedule
+
+
 async def create_contract(
     db: AsyncSession,
     user_id: str,
@@ -99,6 +141,7 @@ async def create_contract(
     city: str | None = None,
     fuel_type: str | None = None,
     hancock_project_id: str | None = None,
+    auditor_id: str | None = None,
     date: str | None = None,
     start_at_time: str | None = None,
     end_at_time: str | None = None,
@@ -164,6 +207,7 @@ async def create_contract(
         "fuel_type": fuel_type,
         "sponsored_by": sponsored_by,
         "hancock_project_id": hancock_project_id,
+        "auditor_id": auditor_id,
         "date": parsed_date,
         "start_at_time": parsed_start_time,
         "end_at_time": parsed_end_time,
@@ -183,6 +227,13 @@ async def create_contract(
     return contract
 
 
+class _Unset:
+    pass
+
+
+_UNSET = _Unset()
+
+
 async def update_contract(
     db: AsyncSession,
     contract_id: str,
@@ -190,6 +241,7 @@ async def update_contract(
     city: str | None = None,
     fuel_type: str | None = None,
     hancock_project_id: str | None = None,
+    auditor_id: str | None | type[_Unset] = _UNSET,
     date: str | None = None,
     start_at_time: str | None = None,
     end_at_time: str | None = None,
@@ -217,6 +269,8 @@ async def update_contract(
         update_data["fuel_type"] = fuel_type
     if hancock_project_id is not None:
         update_data["hancock_project_id"] = hancock_project_id
+    if auditor_id is not _UNSET:
+        update_data["auditor_id"] = auditor_id
     if date is not None:
         if isinstance(date, str):
             # Handle both date strings and datetime strings
