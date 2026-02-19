@@ -67,6 +67,7 @@ class ContractResponse(BaseModel):
     zip: Optional[str] = None
     city: Optional[str] = None
     fuel_type: Optional[str] = None
+    sponsored_by: Optional[str] = None
     hancock_project_id: Optional[str] = None
     date: Optional[str] = None
     start_at_time: Optional[str] = None
@@ -91,6 +92,7 @@ class ContractListItem(BaseModel):
     zip: Optional[str] = None
     city: Optional[str] = None
     fuel_type: Optional[str] = None
+    sponsored_by: Optional[str] = None
     hancock_project_id: Optional[str] = None
     formatted_datetime: Optional[str] = None
     meeting_url: Optional[str] = None
@@ -119,12 +121,18 @@ class PaginatedContractListResponse(BaseModel):
         from_attributes = True
 
 
+class SponsoredByStats(BaseModel):
+    total: int
+    fuel: dict[str, int]
+
+
 class ContractStatisticsResponse(BaseModel):
     total: int
     by_form_stage: dict[str, int]
     by_status: dict[str, int]
     by_zip_code: dict[str, int]
     by_city: dict[str, int]
+    by_sponsored_by: dict[str, SponsoredByStats]
     by_proceed_reason: dict[str, int]
 
 
@@ -132,7 +140,7 @@ class ContractStatisticsResponse(BaseModel):
 async def get_statistics(
     db: AsyncSession = Depends(get_db),
 ):
-    """Return contract statistics: total count, counts per form stage, status, zip code, and proceed_reason."""
+    """Return contract statistics: total count, counts per form stage, status, zip code, city, sponsored_by, and proceed_reason."""
     stats = await get_contract_statistics(db)
     return ContractStatisticsResponse(
         total=stats["total"],
@@ -140,6 +148,7 @@ async def get_statistics(
         by_status=stats["by_status"],
         by_zip_code=stats["by_zip_code"],
         by_city=stats["by_city"],
+        by_sponsored_by=stats["by_sponsored_by"],
         by_proceed_reason=stats["by_proceed_reason"],
     )
 
@@ -170,6 +179,7 @@ async def list_contracts(
                 zip=contract.zip,
                 city=contract.city,
                 fuel_type=contract.fuel_type,
+                sponsored_by=contract.sponsored_by or "other",
                 hancock_project_id=contract.hancock_project_id,
                 formatted_datetime=format_datetime(contract.date, contract.start_at_time),
                 meeting_url=contract.google_meet_url,
@@ -202,6 +212,7 @@ async def get_all_contracts(
             zip=contract.zip,
             city=contract.city,
             fuel_type=contract.fuel_type,
+            sponsored_by=contract.sponsored_by or "other",
             hancock_project_id=contract.hancock_project_id,
             date=contract.date.isoformat() if contract.date else None,
             start_at_time=contract.start_at_time.isoformat() if contract.start_at_time else None,
@@ -240,6 +251,7 @@ async def get_contract(
         zip=contract.zip,
         city=contract.city,
         fuel_type=contract.fuel_type,
+        sponsored_by=contract.sponsored_by or "other",
         hancock_project_id=contract.hancock_project_id,
         date=contract.date.isoformat() if contract.date else None,
         start_at_time=contract.start_at_time.isoformat() if contract.start_at_time else None,
@@ -276,6 +288,7 @@ async def patch_contract_status(
         zip=contract.zip,
         city=contract.city,
         fuel_type=contract.fuel_type,
+        sponsored_by=contract.sponsored_by or "other",
         hancock_project_id=contract.hancock_project_id,
         date=contract.date.isoformat() if contract.date else None,
         start_at_time=contract.start_at_time.isoformat() if contract.start_at_time else None,
@@ -360,6 +373,7 @@ async def submit_contract(
         zip=contract.zip,
         city=contract.city,
         fuel_type=contract.fuel_type,
+        sponsored_by=contract.sponsored_by or "other",
         hancock_project_id=contract.hancock_project_id,
         date=contract.date.isoformat() if contract.date else None,
         start_at_time=contract.start_at_time.isoformat() if contract.start_at_time else None,
@@ -434,6 +448,7 @@ async def upload_inspection_doc(
             zip=updated_contract.zip,
             city=updated_contract.city,
             fuel_type=updated_contract.fuel_type,
+            sponsored_by=updated_contract.sponsored_by or "other",
             hancock_project_id=updated_contract.hancock_project_id,
             date=updated_contract.date.isoformat() if updated_contract.date else None,
             start_at_time=updated_contract.start_at_time.isoformat() if updated_contract.start_at_time else None,
@@ -519,6 +534,7 @@ async def upload_invoice_doc(
             zip=updated_contract.zip,
             city=updated_contract.city,
             fuel_type=updated_contract.fuel_type,
+            sponsored_by=updated_contract.sponsored_by or "other",
             hancock_project_id=updated_contract.hancock_project_id,
             date=updated_contract.date.isoformat() if updated_contract.date else None,
             start_at_time=updated_contract.start_at_time.isoformat() if updated_contract.start_at_time else None,

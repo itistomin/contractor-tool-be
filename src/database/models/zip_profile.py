@@ -49,6 +49,7 @@ class Contract(Base):
     zip: Mapped[str | None] = mapped_column(nullable=True)
     city: Mapped[str | None] = mapped_column(nullable=True)
     fuel_type: Mapped[str | None] = mapped_column(nullable=True)
+    sponsored_by: Mapped[str | None] = mapped_column(nullable=True)
     
     hancock_project_id: Mapped[str | None] = mapped_column(nullable=True)
     

@@ -147,11 +147,22 @@ async def create_contract(
         else:
             parsed_end_time = end_at_time
     
+    # Resolve sponsored_by from zip_profiles when zip is provided
+    sponsored_by = None
+    if zip:
+        profile_result = await db.execute(
+            select(ZipProfiles.sponsored).where(ZipProfiles.zip_code == zip).limit(1)
+        )
+        row = profile_result.one_or_none()
+        if row is not None:
+            sponsored_by = row[0]
+
     contract_kwargs = {
         "user_id": user_id,
         "zip": zip,
         "city": city,
         "fuel_type": fuel_type,
+        "sponsored_by": sponsored_by,
         "hancock_project_id": hancock_project_id,
         "date": parsed_date,
         "start_at_time": parsed_start_time,
@@ -164,7 +175,7 @@ async def create_contract(
     # Only set r2 if explicitly provided, otherwise use model default (False)
     if r2 is not None:
         contract_kwargs["r2"] = r2
-    
+
     contract = Contract(**contract_kwargs)
     db.add(contract)
     await db.commit()
@@ -287,7 +298,7 @@ async def get_contract_statistics(
 ) -> dict:
     """
     Return contract statistics: total count, counts per form_stage, per status,
-    per zip_code, and per proceed_reason (via zip_profiles join).
+    per zip_code, per city, per sponsored_by, and per proceed_reason (via zip_profiles join).
     Returns:
         {
             "total": int,
@@ -295,6 +306,7 @@ async def get_contract_statistics(
             "by_status": { "open": int, "cancelled": int, "completed": int },
             "by_zip_code": { "<zip>": int, ... },
             "by_city": { "<city>": int, ... },
+            "by_sponsored_by": { "<sponsor>": { "total": int, "fuel": { "<fuel_type>": int } }, ... },
             "by_proceed_reason": { "<reason>": int, ... }
         }
     """
@@ -326,6 +338,26 @@ async def get_contract_statistics(
     )
     by_city = {row[0] or "": row[1] for row in city_result.all()}
 
+    sponsored_by_fuel_result = await db.execute(
+        select(
+            Contract.sponsored_by,
+            Contract.fuel_type,
+            func.count(Contract.id),
+        )
+        .group_by(Contract.sponsored_by, Contract.fuel_type)
+    )
+    by_sponsored_by = {}
+    for row in sponsored_by_fuel_result.all():
+        sponsor_key = row[0] or "other"
+        fuel_key = row[1] or ""
+        count = row[2]
+        if sponsor_key not in by_sponsored_by:
+            by_sponsored_by[sponsor_key] = {"total": 0, "fuel": {}}
+        by_sponsored_by[sponsor_key]["total"] += count
+        by_sponsored_by[sponsor_key]["fuel"][fuel_key] = (
+            by_sponsored_by[sponsor_key]["fuel"].get(fuel_key, 0) + count
+        )
+
     proceed_reason_result = await db.execute(
         select(ZipProfiles.proceed_reason, func.count(distinct(Contract.id)))
         .select_from(Contract)
@@ -338,7 +370,8 @@ async def get_contract_statistics(
         "total": total,
         "by_form_stage": by_form_stage,
         "by_status": by_status,
-            "by_zip_code": by_zip_code,
-            "by_city": by_city,
-            "by_proceed_reason": by_proceed_reason,
+        "by_zip_code": by_zip_code,
+        "by_city": by_city,
+        "by_sponsored_by": by_sponsored_by,
+        "by_proceed_reason": by_proceed_reason,
     }
