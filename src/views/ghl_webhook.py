@@ -11,7 +11,7 @@ router = APIRouter(
 logger = logging.getLogger(__name__)
 
 
-@router.post("")
+@router.post("/")
 async def ghl_contract_webhook(request: Request):
     """Webhook with flexible payload. Logs payload and returns 200 OK."""
     payload = await request.json()
