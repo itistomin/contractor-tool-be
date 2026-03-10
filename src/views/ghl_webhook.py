@@ -22,6 +22,12 @@ logger = logging.getLogger(__name__)
 # Single default user for all contracts created/updated by the GHL webhook.
 GHL_WEBHOOK_USER_EMAIL = "gohilevel@nonexist.com"
 
+# Map webhook fuel type values to contract fuel_type.
+GHL_FUEL_TYPE_MAP = {
+    "gas": "Natural Gas",
+    "electric": "Electric",
+}
+
 
 @router.post("/")
 async def ghl_contract_webhook(
@@ -44,6 +50,10 @@ async def ghl_contract_webhook(
         zip_code = None
     if source_of_heat is not None and str(source_of_heat).strip() == "":
         source_of_heat = None
+    elif source_of_heat is not None:
+        source_of_heat = GHL_FUEL_TYPE_MAP.get(
+            str(source_of_heat).strip().lower(), source_of_heat
+        )
 
     # Use single default user as creator for all webhook-created contracts.
     ghl_user = await get_or_create_user(
