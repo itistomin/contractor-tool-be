@@ -1,3 +1,4 @@
+import json
 import logging
 
 from fastapi import APIRouter, Depends, Request
@@ -39,8 +40,7 @@ async def ghl_contract_webhook(
     If id is present and matches ghl_contract_id, update that contract; else create new.
     """
     payload = await request.json()
-    print(payload)
-    logger.info("GHL contract webhook payload: %s", payload)
+    logger.info("GHL contract webhook payload: %s", json.dumps(payload, default=str))
 
     ghl_id = payload.get("id")
     email = (payload.get("email") or "").strip() or None
