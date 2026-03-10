@@ -1,9 +1,10 @@
 import datetime as dt
 
 from sqlalchemy import distinct, select, update, func
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.models import Contract, User, ZipProfiles
+from database.models import Contract, ContractFormUpdate, User, ZipProfiles
 
 
 async def list_contracts(
@@ -94,6 +95,14 @@ async def get_contract_by_id(db: AsyncSession, contract_id: str) -> Contract | N
     return result.scalar_one_or_none()
 
 
+async def get_contract_by_ghl_contract_id(db: AsyncSession, ghl_contract_id: str) -> Contract | None:
+    """Get contract by GHL contract id."""
+    result = await db.execute(
+        select(Contract).where(Contract.ghl_contract_id == ghl_contract_id)
+    )
+    return result.scalar_one_or_none()
+
+
 async def get_auditor_schedule_for_date(
     db: AsyncSession,
     date: str,
@@ -150,6 +159,8 @@ async def create_contract(
     invoice_doc: str | None = None,
     form_stage: str | None = None,
     r2: bool | None = None,
+    ghl_contract_id: str | None = None,
+    client_email: str | None = None,
 ) -> Contract:
     """Create a new contract."""
     import datetime
@@ -215,6 +226,8 @@ async def create_contract(
         "inspection_doc": inspection_doc,
         "invoice_doc": invoice_doc,
         "form_stage": form_stage or "project_id",
+        "ghl_contract_id": ghl_contract_id,
+        "client_email": client_email,
     }
     # Only set r2 if explicitly provided, otherwise use model default (False)
     if r2 is not None:
@@ -222,6 +235,15 @@ async def create_contract(
 
     contract = Contract(**contract_kwargs)
     db.add(contract)
+    await db.flush()
+    form_part = form_stage or "project_id"
+    db.add(
+        ContractFormUpdate(
+            contract_id=contract.id,
+            form_part=form_part,
+            user_id=user_id,
+        )
+    )
     await db.commit()
     await db.refresh(contract)
     return contract
@@ -237,6 +259,7 @@ _UNSET = _Unset()
 async def update_contract(
     db: AsyncSession,
     contract_id: str,
+    user_id: str | None = None,
     zip: str | None = None,
     city: str | None = None,
     fuel_type: str | None = None,
@@ -250,6 +273,8 @@ async def update_contract(
     invoice_doc: str | None = None,
     form_stage: str | None = None,
     r2: bool | None = None,
+    ghl_contract_id: str | None = None,
+    client_email: str | None = None,
 ) -> Contract | None:
     """Update an existing contract with only provided fields."""
     import datetime
@@ -261,6 +286,8 @@ async def update_contract(
     
     # Build update dictionary with only provided fields
     update_data = {}
+    if user_id is not None:
+        update_data["user_id"] = user_id
     if zip is not None:
         update_data["zip"] = zip
     if city is not None:
@@ -314,7 +341,11 @@ async def update_contract(
         update_data["form_stage"] = form_stage
     if r2 is not None:
         update_data["r2"] = r2
-    
+    if ghl_contract_id is not None:
+        update_data["ghl_contract_id"] = ghl_contract_id
+    if client_email is not None:
+        update_data["client_email"] = client_email
+
     if not update_data:
         return contract
     
@@ -325,8 +356,20 @@ async def update_contract(
         .values(**update_data)
     )
     await db.commit()
-    # Get the updated contract
-    return await get_contract_by_id(db, contract_id)
+    updated_contract = await get_contract_by_id(db, contract_id)
+    # Record who last updated this form part (last update wins)
+    if user_id is not None and updated_contract and updated_contract.form_stage:
+        stmt = insert(ContractFormUpdate).values(
+            contract_id=contract_id,
+            form_part=updated_contract.form_stage,
+            user_id=user_id,
+        ).on_conflict_do_update(
+            index_elements=["contract_id", "form_part"],
+            set_={"user_id": user_id},
+        )
+        await db.execute(stmt)
+        await db.commit()
+    return updated_contract
 
 
 async def update_contract_status(

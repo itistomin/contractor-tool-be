@@ -388,6 +388,7 @@ async def submit_contract(
         update_kwargs = dict(
             db=db,
             contract_id=contract_data.contract_id,
+            user_id=contract_data.user_id,
             zip=contract_data.zip,
             city=contract_data.city,
             fuel_type=contract_data.fuel_type,
