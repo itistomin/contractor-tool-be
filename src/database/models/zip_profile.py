@@ -68,3 +68,5 @@ class Contract(Base):
 
     ghl_contract_id: Mapped[str | None] = mapped_column(nullable=True)
     client_email: Mapped[str | None] = mapped_column(nullable=True)
+    client_name: Mapped[str | None] = mapped_column(nullable=True)
+    phone_number: Mapped[str | None] = mapped_column(nullable=True)

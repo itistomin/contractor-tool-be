@@ -161,6 +161,8 @@ async def create_contract(
     r2: bool | None = None,
     ghl_contract_id: str | None = None,
     client_email: str | None = None,
+    client_name: str | None = None,
+    phone_number: str | None = None,
 ) -> Contract:
     """Create a new contract."""
     import datetime
@@ -228,6 +230,8 @@ async def create_contract(
         "form_stage": form_stage or "project_id",
         "ghl_contract_id": ghl_contract_id,
         "client_email": client_email,
+        "client_name": client_name,
+        "phone_number": phone_number,
     }
     # Only set r2 if explicitly provided, otherwise use model default (False)
     if r2 is not None:
@@ -275,6 +279,8 @@ async def update_contract(
     r2: bool | None = None,
     ghl_contract_id: str | None = None,
     client_email: str | None = None,
+    client_name: str | None = None,
+    phone_number: str | None = None,
 ) -> Contract | None:
     """Update an existing contract with only provided fields."""
     import datetime
@@ -345,7 +351,10 @@ async def update_contract(
         update_data["ghl_contract_id"] = ghl_contract_id
     if client_email is not None:
         update_data["client_email"] = client_email
-
+    if client_name is not None:
+        update_data["client_name"] = client_name
+    if phone_number is not None:
+        update_data["phone_number"] = phone_number
     if not update_data:
         return contract
     

@@ -47,6 +47,9 @@ async def ghl_contract_webhook(
     zip_code = payload.get("zipCode")
     source_of_heat = payload.get("sourceOfHeat")
     city = payload.get("city")
+    client_name = payload.get("name")
+    phone_number = payload.get("phone")
+
     if zip_code is not None and str(zip_code).strip() == "":
         zip_code = None
     if source_of_heat is not None and str(source_of_heat).strip() == "":
@@ -79,6 +82,8 @@ async def ghl_contract_webhook(
                 ghl_contract_id=ghl_id_str,
                 client_email=email,
                 city=city,
+                client_name=client_name,
+                phone_number=phone_number,
             )
             logger.info("Updated contract %s from GHL id %s", existing.id, ghl_id_str)
         else:
@@ -90,6 +95,8 @@ async def ghl_contract_webhook(
                 ghl_contract_id=ghl_id_str,
                 client_email=email,
                 city=city,
+                client_name=client_name,
+                phone_number=phone_number,
             )
             logger.info("Created new contract for GHL id %s", ghl_id_str)
     else:
@@ -100,6 +107,8 @@ async def ghl_contract_webhook(
             fuel_type=source_of_heat,
             client_email=email,
             city=city,
+            client_name=client_name,
+            phone_number=phone_number,
         )
         logger.info("Created new contract (no GHL id)")
 

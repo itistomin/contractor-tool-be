@@ -115,6 +115,9 @@ class ContractListItem(BaseModel):
     sponsored_by: Optional[str] = None
     hancock_project_id: Optional[str] = None
     auditor_id: Optional[str] = None
+    client_name: Optional[str] = None
+    phone_number: Optional[str] = None
+    client_email: Optional[str] = None
     formatted_datetime: Optional[str] = None
     meeting_url: Optional[str] = None
     inspection_doc: Optional[str] = None
@@ -232,6 +235,9 @@ async def list_contracts(
                 sponsored_by=contract.sponsored_by or "other",
                 hancock_project_id=contract.hancock_project_id,
                 auditor_id=contract.auditor_id,
+                client_name=contract.client_name,
+                phone_number=contract.phone_number,
+                client_email=contract.client_email,
                 formatted_datetime=format_datetime(contract.date, contract.start_at_time),
                 meeting_url=contract.google_meet_url,
                 inspection_doc=contract.inspection_doc,
