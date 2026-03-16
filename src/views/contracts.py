@@ -19,6 +19,7 @@ from database.queries.contract import (
     list_contracts as list_contracts_query,
     update_contract_status,
     get_contract_statistics,
+    delete_contract,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -364,6 +365,23 @@ async def patch_contract_status(
         created_at=contract.created_at.isoformat() if contract.created_at else "",
         updated_at=contract.updated_at.isoformat() if contract.updated_at else "",
     )
+
+
+@router.delete("/{contract_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_contract_endpoint(
+    contract_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Delete a contract by ID.
+    Returns 204 if deleted, 404 if not found.
+    """
+    deleted = await delete_contract(db, contract_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Contract with id {contract_id} not found",
+        )
 
 
 @router.post("/", response_model=ContractResponse)

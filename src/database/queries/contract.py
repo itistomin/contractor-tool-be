@@ -1,6 +1,6 @@
 import datetime as dt
 
-from sqlalchemy import distinct, select, update, func
+from sqlalchemy import distinct, select, update, delete, func
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -481,3 +481,18 @@ async def get_contract_statistics(
         "by_sponsored_by": by_sponsored_by,
         "by_proceed_reason": by_proceed_reason,
     }
+
+
+async def delete_contract(
+    db: AsyncSession,
+    contract_id: str,
+) -> bool:
+    """
+    Permanently delete a contract by ID.
+    Returns True if a row was deleted, False otherwise.
+    """
+    result = await db.execute(
+        delete(Contract).where(Contract.id == contract_id)
+    )
+    await db.commit()
+    return result.rowcount > 0
