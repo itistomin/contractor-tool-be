@@ -71,6 +71,7 @@ class ContractRequest(BaseModel):
     fuel_type: Optional[str] = None
     hancock_project_id: Optional[str] = None
     auditor_id: Optional[str] = None
+    multifamily_values: Optional[list[str]] = None
     date: Optional[str] = None  # ISO format date string
     start_at_time: Optional[str] = None  # ISO format time string
     end_at_time: Optional[str] = None  # ISO format time string
@@ -90,6 +91,7 @@ class ContractResponse(BaseModel):
     sponsored_by: Optional[str] = None
     hancock_project_id: Optional[str] = None
     auditor_id: Optional[str] = None
+    multifamily_values: Optional[list[str]] = None
     date: Optional[str] = None
     start_at_time: Optional[str] = None
     end_at_time: Optional[str] = None
@@ -213,6 +215,7 @@ async def list_contracts(
     limit: int = Query(9, ge=1, le=100, description="Number of items per page"),
     date_from: Optional[str] = Query(None, description="Filter contracts by date (ISO format, e.g., 2024-01-01). Only returns contracts with date >= date_from"),
     no_dates: Optional[bool] = Query(None, description="If True, only return contracts without dates. If False, only return contracts with dates. If None (default), return all contracts."),
+    search: Optional[str] = Query(None, description="Optional search term (case-insensitive). Searches hancock_project_id, client_name, zip, and city."),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -221,7 +224,14 @@ async def list_contracts(
     Returns 9 items per page by default.
     By default, shows all contracts (with and without dates).
     """
-    contracts, total_count = await list_contracts_query(db, page=page, limit=limit, date_from=date_from, no_dates=no_dates)
+    contracts, total_count = await list_contracts_query(
+        db,
+        page=page,
+        limit=limit,
+        date_from=date_from,
+        no_dates=no_dates,
+        search=search,
+    )
     
     # Calculate total pages
     total_pages = (total_count + limit - 1) // limit if total_count > 0 else 0
@@ -273,6 +283,7 @@ async def get_all_contracts(
             sponsored_by=contract.sponsored_by or "other",
             hancock_project_id=contract.hancock_project_id,
             auditor_id=contract.auditor_id,
+            multifamily_values=contract.multifamily_values,
             date=contract.date.isoformat() if contract.date else None,
             start_at_time=contract.start_at_time.isoformat() if contract.start_at_time else None,
             end_at_time=contract.end_at_time.isoformat() if contract.end_at_time else None,
@@ -313,6 +324,7 @@ async def get_contract(
         sponsored_by=contract.sponsored_by or "other",
         hancock_project_id=contract.hancock_project_id,
         auditor_id=contract.auditor_id,
+        multifamily_values=contract.multifamily_values,
         date=contract.date.isoformat() if contract.date else None,
         start_at_time=contract.start_at_time.isoformat() if contract.start_at_time else None,
         end_at_time=contract.end_at_time.isoformat() if contract.end_at_time else None,
@@ -351,6 +363,7 @@ async def patch_contract_status(
         sponsored_by=contract.sponsored_by or "other",
         hancock_project_id=contract.hancock_project_id,
         auditor_id=contract.auditor_id,
+        multifamily_values=contract.multifamily_values,
         date=contract.date.isoformat() if contract.date else None,
         start_at_time=contract.start_at_time.isoformat() if contract.start_at_time else None,
         end_at_time=contract.end_at_time.isoformat() if contract.end_at_time else None,
@@ -420,6 +433,7 @@ async def submit_contract(
             invoice_doc=contract_data.invoice_doc,
             form_stage=contract_data.form_stage,
             r2=contract_data.r2,
+            multifamily_values=contract_data.multifamily_values,
         )
         if "auditor_id" in contract_data.model_dump(exclude_unset=True):
             update_kwargs["auditor_id"] = contract_data.auditor_id
@@ -434,6 +448,7 @@ async def submit_contract(
             fuel_type=contract_data.fuel_type,
             hancock_project_id=contract_data.hancock_project_id,
             auditor_id=contract_data.auditor_id,
+            multifamily_values=contract_data.multifamily_values,
             date=contract_data.date,
             start_at_time=contract_data.start_at_time,
             end_at_time=contract_data.end_at_time,
@@ -454,6 +469,7 @@ async def submit_contract(
         sponsored_by=contract.sponsored_by or "other",
         hancock_project_id=contract.hancock_project_id,
         auditor_id=contract.auditor_id,
+        multifamily_values=contract.multifamily_values,
         date=contract.date.isoformat() if contract.date else None,
         start_at_time=contract.start_at_time.isoformat() if contract.start_at_time else None,
         end_at_time=contract.end_at_time.isoformat() if contract.end_at_time else None,
@@ -530,6 +546,7 @@ async def upload_inspection_doc(
             sponsored_by=updated_contract.sponsored_by or "other",
             hancock_project_id=updated_contract.hancock_project_id,
             auditor_id=updated_contract.auditor_id,
+            multifamily_values=updated_contract.multifamily_values,
             date=updated_contract.date.isoformat() if updated_contract.date else None,
             start_at_time=updated_contract.start_at_time.isoformat() if updated_contract.start_at_time else None,
             end_at_time=updated_contract.end_at_time.isoformat() if updated_contract.end_at_time else None,
@@ -617,6 +634,7 @@ async def upload_invoice_doc(
             sponsored_by=updated_contract.sponsored_by or "other",
             hancock_project_id=updated_contract.hancock_project_id,
             auditor_id=updated_contract.auditor_id,
+            multifamily_values=updated_contract.multifamily_values,
             date=updated_contract.date.isoformat() if updated_contract.date else None,
             start_at_time=updated_contract.start_at_time.isoformat() if updated_contract.start_at_time else None,
             end_at_time=updated_contract.end_at_time.isoformat() if updated_contract.end_at_time else None,

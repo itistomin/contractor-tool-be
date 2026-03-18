@@ -1,6 +1,7 @@
 import datetime
 from uuid import uuid4
 
+import sqlalchemy as sa
 from sqlalchemy import ForeignKey, func
 from sqlalchemy.orm import (
     Mapped, 
@@ -70,3 +71,4 @@ class Contract(Base):
     client_email: Mapped[str | None] = mapped_column(nullable=True)
     client_name: Mapped[str | None] = mapped_column(nullable=True)
     phone_number: Mapped[str | None] = mapped_column(nullable=True)
+    multifamily_values: Mapped[list[str] | None] = mapped_column(sa.JSON, nullable=True)

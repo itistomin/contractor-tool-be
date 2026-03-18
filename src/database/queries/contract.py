@@ -7,12 +7,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database.models import Contract, ContractFormUpdate, User, ZipProfiles
 
 
+def icontains(column, needle: str):
+    """
+    Case-insensitive substring match.
+    Implemented as: lower(column) LIKE %lower(needle)%.
+    """
+    return func.lower(column).like(f"%{needle.lower()}%")
+
+
 async def list_contracts(
     db: AsyncSession,
     page: int = 1,
     limit: int = 20,
     date_from: str | None = None,
-    no_dates: bool | None = None
+    no_dates: bool | None = None,
+    search: str | None = None,
 ) -> tuple[list[Contract], int]:
     """
     List contracts with pagination, ordered by date and start_at_time.
@@ -39,6 +48,19 @@ async def list_contracts(
     query = select(Contract)
     count_query = select(func.count(Contract.id))
     
+    # Apply search filter (case-insensitive partial match)
+    if search is not None and str(search).strip() != "":
+        search_term = str(search).strip()
+        search_filter = (
+            icontains(Contract.hancock_project_id, search_term)
+            | icontains(Contract.client_name, search_term)
+            | icontains(Contract.client_email, search_term)
+            | icontains(Contract.zip, search_term)
+            | icontains(Contract.city, search_term)
+        )
+        query = query.where(search_filter)
+        count_query = count_query.where(search_filter)
+
     # Apply no_dates filter
     if no_dates is True:
         # Only contracts without dates
@@ -151,6 +173,7 @@ async def create_contract(
     fuel_type: str | None = None,
     hancock_project_id: str | None = None,
     auditor_id: str | None = None,
+    multifamily_values: list[str] | None = None,
     date: str | None = None,
     start_at_time: str | None = None,
     end_at_time: str | None = None,
@@ -221,6 +244,7 @@ async def create_contract(
         "sponsored_by": sponsored_by,
         "hancock_project_id": hancock_project_id,
         "auditor_id": auditor_id,
+        "multifamily_values": multifamily_values,
         "date": parsed_date,
         "start_at_time": parsed_start_time,
         "end_at_time": parsed_end_time,
@@ -269,6 +293,7 @@ async def update_contract(
     fuel_type: str | None = None,
     hancock_project_id: str | None = None,
     auditor_id: str | None | type[_Unset] = _UNSET,
+    multifamily_values: list[str] | None = None,
     date: str | None = None,
     start_at_time: str | None = None,
     end_at_time: str | None = None,
@@ -304,6 +329,8 @@ async def update_contract(
         update_data["hancock_project_id"] = hancock_project_id
     if auditor_id is not _UNSET:
         update_data["auditor_id"] = auditor_id
+    if multifamily_values is not None:
+        update_data["multifamily_values"] = multifamily_values
     if date is not None:
         if isinstance(date, str):
             # Handle both date strings and datetime strings
@@ -437,12 +464,26 @@ async def get_contract_statistics(
     zip_result = await db.execute(
         select(Contract.zip, func.count(Contract.id)).group_by(Contract.zip)
     )
-    by_zip_code = {row[0] or "": row[1] for row in zip_result.all()}
+    by_zip_code = {
+        (row[0] or ""): row[1]
+        for row in zip_result.all()
+        if (row[0] or "").strip() != ""
+    }
+    if len(by_zip_code) > 5:
+        by_zip_code = dict(
+            sorted(by_zip_code.items(), key=lambda kv: kv[1], reverse=True)[:5]
+        )
 
     city_result = await db.execute(
         select(Contract.city, func.count(Contract.id)).group_by(Contract.city)
     )
-    by_city = {row[0] or "": row[1] for row in city_result.all()}
+    by_city = {
+        (row[0] or ""): row[1]
+        for row in city_result.all()
+        if (row[0] or "").strip() != ""
+    }
+    if len(by_city) > 5:
+        by_city = dict(sorted(by_city.items(), key=lambda kv: kv[1], reverse=True)[:5])
 
     sponsored_by_fuel_result = await db.execute(
         select(
