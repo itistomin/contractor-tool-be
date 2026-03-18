@@ -402,12 +402,7 @@ async def submit_contract(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Contract with id {contract_data.contract_id} not found",
             )
-        # Verify that the contract belongs to the user_id BEFORE updating
-        if existing_contract.user_id != contract_data.user_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Contract does not belong to the specified user",
-            )
+
         # Update existing contract (pass auditor_id only when present in body so null can clear it)
         update_kwargs = dict(
             db=db,
