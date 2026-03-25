@@ -55,9 +55,8 @@ async def ghl_contract_webhook(
     if source_of_heat is not None and str(source_of_heat).strip() == "":
         source_of_heat = None
     elif source_of_heat is not None:
-        source_of_heat = GHL_FUEL_TYPE_MAP.get(
-            str(source_of_heat).strip().lower(), source_of_heat
-        )
+        normalized = str(source_of_heat).strip().lower()
+        source_of_heat = "Natural Gas" if "gas" in normalized else "Electric"
     if city is not None and str(city).strip() == "":
         city = None
 
