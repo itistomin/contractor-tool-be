@@ -1,6 +1,6 @@
 import datetime as dt
 
-from sqlalchemy import distinct, select, update, delete, func
+from sqlalchemy import distinct, select, update, delete, func, literal
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -505,11 +505,12 @@ async def get_contract_statistics(
             by_sponsored_by[sponsor_key]["fuel"].get(fuel_key, 0) + count
         )
 
+    proceed_reason_key = func.coalesce(ZipProfiles.proceed_reason, literal("Out of Scope"))
     proceed_reason_result = await db.execute(
-        select(ZipProfiles.proceed_reason, func.count(distinct(Contract.id)))
+        select(proceed_reason_key, func.count(distinct(Contract.id)))
         .select_from(Contract)
-        .join(ZipProfiles, Contract.zip == ZipProfiles.zip_code)
-        .group_by(ZipProfiles.proceed_reason)
+        .outerjoin(ZipProfiles, Contract.zip == ZipProfiles.zip_code)
+        .group_by(proceed_reason_key)
     )
     by_proceed_reason = {row[0] or "": row[1] for row in proceed_reason_result.all()}
 

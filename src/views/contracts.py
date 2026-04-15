@@ -24,6 +24,7 @@ from database.queries.contract import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.s3_service import S3Service
+from services.ses_service import SESService
 
 
 router = APIRouter(
@@ -407,6 +408,45 @@ async def submit_contract(
     - If contract_id is provided, update the existing contract with provided fields.
     - If contract_id is not provided, create a new contract.
     """
+    def _format_date(d) -> str:
+        if not d:
+            return ""
+        return d.strftime("%B %d, %Y")
+
+    def _format_time(t) -> str:
+        if not t:
+            return ""
+        return t.strftime("%I:%M %p").lstrip("0")
+
+    async def _send_auditor_assignment_email(*, auditor_id: str, contract) -> None:
+        from pathlib import Path
+        from sqlalchemy import select
+        from database.models import User
+
+        if not auditor_id:
+            return
+        result = await db.execute(select(User).where(User.id == auditor_id))
+        auditor = result.scalar_one_or_none()
+        if not auditor or not (auditor.email or "").strip():
+            return
+
+        src_root = Path(__file__).resolve().parents[1]
+        template_path = src_root / "services" / "email_templates" / "auditor_notification.html"
+
+        ses = SESService()
+        ses.send_email_from_html_template(
+            to_addresses=[auditor.email],
+            subject="Souzet: New audit location assigned",
+            template_path=template_path,
+            context={
+                "auditor_name_or_email": (auditor.full_name or "").strip() or auditor.email,
+                "city": (contract.city or "").strip(),
+                "zip": (contract.zip or "").strip(),
+                "date": _format_date(contract.date),
+                "time": _format_time(contract.start_at_time),
+            },
+        )
+
     if contract_data.contract_id:
         # First, get the existing contract to verify ownership
         existing_contract = await get_contract_by_id(db, contract_data.contract_id)
@@ -417,6 +457,11 @@ async def submit_contract(
             )
 
         # Update existing contract (pass auditor_id only when present in body so null can clear it)
+        auditor_changed_to_assigned = (
+            "auditor_id" in contract_data.model_dump(exclude_unset=True)
+            and (existing_contract.auditor_id or "") != (contract_data.auditor_id or "")
+            and (contract_data.auditor_id or "").strip() != ""
+        )
         update_kwargs = dict(
             db=db,
             contract_id=contract_data.contract_id,
@@ -438,6 +483,11 @@ async def submit_contract(
         if "auditor_id" in contract_data.model_dump(exclude_unset=True):
             update_kwargs["auditor_id"] = contract_data.auditor_id
         contract = await update_contract(**update_kwargs)
+        if auditor_changed_to_assigned and contract and contract.auditor_id:
+            try:
+                await _send_auditor_assignment_email(auditor_id=contract.auditor_id, contract=contract)
+            except Exception:
+                pass
     else:
         # Create new contract
         contract = await create_contract(
@@ -458,6 +508,11 @@ async def submit_contract(
             form_stage=contract_data.form_stage,
             r2=contract_data.r2,
         )
+        if contract and (contract.auditor_id or "").strip() != "":
+            try:
+                await _send_auditor_assignment_email(auditor_id=contract.auditor_id, contract=contract)
+            except Exception:
+                pass
     
     # Convert to response model
     return ContractResponse(
