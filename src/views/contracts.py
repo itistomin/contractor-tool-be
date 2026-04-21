@@ -7,7 +7,9 @@ from fastapi import (
     File,
     Query,
 )
+from datetime import datetime, timedelta
 from typing import Literal, Optional
+from urllib.parse import urlencode
 from pydantic import BaseModel
 
 from database.connection import get_db
@@ -62,6 +64,30 @@ def format_datetime_range(
         start_str = start_time_obj.strftime("%I:%M %p").lstrip("0")
         return f"{date_str} at {start_str}"
     return date_str
+
+
+def build_google_calendar_event_url(
+    *,
+    title: str,
+    start_dt: datetime,
+    end_dt: datetime,
+    details: str = "",
+    location: str = "",
+) -> str:
+    def _fmt(dt: datetime) -> str:
+        # Use a "floating" time (no timezone suffix) so Google Calendar treats it as local time.
+        return dt.strftime("%Y%m%dT%H%M%S")
+
+    params = {
+        "action": "TEMPLATE",
+        "text": title,
+        "dates": f"{_fmt(start_dt)}/{_fmt(end_dt)}",
+    }
+    if details:
+        params["details"] = details
+    if location:
+        params["location"] = location
+    return "https://calendar.google.com/calendar/render?" + urlencode(params)
 
 
 class ContractRequest(BaseModel):
@@ -433,6 +459,33 @@ async def submit_contract(
         src_root = Path(__file__).resolve().parents[1]
         template_path = src_root / "services" / "email_templates" / "auditor_notification.html"
 
+        google_calendar_url = ""
+        if contract.date and contract.start_at_time:
+            start_dt = datetime.combine(contract.date, contract.start_at_time)
+            end_dt = None
+            if contract.end_at_time:
+                end_dt = datetime.combine(contract.date, contract.end_at_time)
+            else:
+                end_dt = start_dt + timedelta(hours=1)
+
+            details_lines: list[str] = []
+            if (contract.google_meet_url or "").strip():
+                details_lines.append(f"Meeting link: {contract.google_meet_url.strip()}")
+            details_lines.append("Assigned via Souzet.")
+            details = "\n".join(details_lines)
+
+            location = " ".join([p for p in [(contract.city or "").strip(), (contract.zip or "").strip()] if p])
+            title_city_zip = " ".join([p for p in [(contract.city or "").strip(), (contract.zip or "").strip()] if p])
+            title = f"Audit - {title_city_zip}".strip() if title_city_zip else "Audit"
+
+            google_calendar_url = build_google_calendar_event_url(
+                title=title,
+                start_dt=start_dt,
+                end_dt=end_dt,
+                details=details,
+                location=location,
+            )
+
         ses = SESService()
         ses.send_email_from_html_template(
             to_addresses=[auditor.email],
@@ -444,6 +497,7 @@ async def submit_contract(
                 "zip": (contract.zip or "").strip(),
                 "date": _format_date(contract.date),
                 "time": _format_time(contract.start_at_time),
+                "google_calendar_url": google_calendar_url,
             },
         )
 
