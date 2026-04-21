@@ -9,6 +9,7 @@ cryptography
 cognitojwt[async]
 boto3
 python-multipart
+pydantic[email]
 
 
 ipython
