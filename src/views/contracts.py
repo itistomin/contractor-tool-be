@@ -180,6 +180,11 @@ class SponsoredByStats(BaseModel):
     fuel: dict[str, int]
 
 
+class ProceedReasonStats(BaseModel):
+    count: int
+    by_sponsored_by: dict[str, SponsoredByStats]
+
+
 class ContractStatisticsResponse(BaseModel):
     total: int
     by_form_stage: dict[str, int]
@@ -187,7 +192,7 @@ class ContractStatisticsResponse(BaseModel):
     by_zip_code: dict[str, int]
     by_city: dict[str, int]
     by_sponsored_by: dict[str, SponsoredByStats]
-    by_proceed_reason: dict[str, int]
+    by_proceed_reason: dict[str, ProceedReasonStats]
 
 
 @router.get("/statistics", response_model=ContractStatisticsResponse)
@@ -242,6 +247,10 @@ async def list_contracts(
     limit: int = Query(9, ge=1, le=100, description="Number of items per page"),
     date_from: Optional[str] = Query(None, description="Filter contracts by date (ISO format, e.g., 2024-01-01). Only returns contracts with date >= date_from"),
     no_dates: Optional[bool] = Query(None, description="If True, only return contracts without dates. If False, only return contracts with dates. If None (default), return all contracts."),
+    status: Optional[Literal["open", "cancelled", "completed"]] = Query(
+        "open",
+        description="Filter contracts by status. Defaults to 'open'.",
+    ),
     search: Optional[str] = Query(None, description="Optional search term (case-insensitive). Searches hancock_project_id, client_name, zip, and city."),
     db: AsyncSession = Depends(get_db),
 ):
@@ -257,6 +266,7 @@ async def list_contracts(
         limit=limit,
         date_from=date_from,
         no_dates=no_dates,
+        status=status,
         search=search,
     )
     

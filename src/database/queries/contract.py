@@ -22,10 +22,11 @@ async def list_contracts(
     date_from: str | None = None,
     no_dates: bool | None = None,
     search: str | None = None,
+    status: str | None = "open",
 ) -> tuple[list[Contract], int]:
     """
     List contracts with pagination, ordered by date and start_at_time.
-    Ordering: items without date first, then ascending date and ascending time.
+    Ordering: newest created first (created_at desc).
     
     Args:
         db: Database session
@@ -47,6 +48,13 @@ async def list_contracts(
     # Build query with optional filters
     query = select(Contract)
     count_query = select(func.count(Contract.id))
+
+    # Apply status filter (defaults to "open")
+    if status is not None:
+        status_value = str(status).strip().lower()
+        if status_value in ("open", "cancelled", "completed"):
+            query = query.where(func.coalesce(Contract.status, literal("open")) == status_value)
+            count_query = count_query.where(func.coalesce(Contract.status, literal("open")) == status_value)
     
     # Apply search filter (case-insensitive partial match)
     if search is not None and str(search).strip() != "":
@@ -95,11 +103,10 @@ async def list_contracts(
     count_result = await db.execute(count_query)
     total_count = count_result.scalar_one()
     
-    # Order by: items without date first (nulls_first), then ascending date and ascending time
+    # Order by: newest created first
     result = await db.execute(
         query.order_by(
-            Contract.date.asc().nulls_first(),
-            Contract.start_at_time.asc().nulls_last()
+            Contract.created_at.desc()
         )
         .limit(limit)
         .offset(offset)
@@ -439,8 +446,8 @@ async def get_contract_statistics(
             "by_status": { "open": int, "cancelled": int, "completed": int },
             "by_zip_code": { "<zip>": int, ... },
             "by_city": { "<city>": int, ... },
-            "by_sponsored_by": { "<sponsor>": { "total": int, "fuel": { "<fuel_type>": int } }, ... },
-            "by_proceed_reason": { "<reason>": int, ... }
+        "by_sponsored_by": { "<sponsor>": { "total": int, "fuel": { "<fuel_type>": int } }, ... },
+        "by_proceed_reason": { "<reason>": { "count": int, "by_sponsored_by": { "<sponsor>": { "total": int, "fuel": { "<fuel_type>": int } } } }, ... }
         }
     """
     total_result = await db.execute(select(func.count(Contract.id)))
@@ -512,7 +519,40 @@ async def get_contract_statistics(
         .outerjoin(ZipProfiles, Contract.zip == ZipProfiles.zip_code)
         .group_by(proceed_reason_key)
     )
-    by_proceed_reason = {row[0] or "": row[1] for row in proceed_reason_result.all()}
+    proceed_reason_counts = {str(row[0] or "").strip(): int(row[1] or 0) for row in proceed_reason_result.all()}
+    proceed_reason_sponsored_by_fuel_result = await db.execute(
+        select(
+            proceed_reason_key,
+            Contract.sponsored_by,
+            Contract.fuel_type,
+            func.count(Contract.id),
+        )
+        .select_from(Contract)
+        .outerjoin(ZipProfiles, Contract.zip == ZipProfiles.zip_code)
+        .group_by(proceed_reason_key, Contract.sponsored_by, Contract.fuel_type)
+    )
+
+    by_proceed_reason: dict[str, dict] = {}
+    for reason, count in proceed_reason_counts.items():
+        if reason == "" or count <= 0:
+            continue
+        by_proceed_reason[reason] = {"count": count, "by_sponsored_by": {}}
+
+    for row in proceed_reason_sponsored_by_fuel_result.all():
+        reason_key = str(row[0] or "").strip()
+        if reason_key == "" or proceed_reason_counts.get(reason_key, 0) <= 0:
+            continue
+        sponsor_key = row[1] or "other"
+        fuel_key = row[2] or ""
+        count = int(row[3] or 0)
+        if count <= 0:
+            continue
+
+        sponsor_bucket = by_proceed_reason[reason_key]["by_sponsored_by"].setdefault(
+            sponsor_key, {"total": 0, "fuel": {}}
+        )
+        sponsor_bucket["total"] += count
+        sponsor_bucket["fuel"][fuel_key] = sponsor_bucket["fuel"].get(fuel_key, 0) + count
 
     return {
         "total": total,
@@ -520,7 +560,7 @@ async def get_contract_statistics(
         "by_status": by_status,
         "by_zip_code": by_zip_code,
         "by_city": by_city,
-        "by_sponsored_by": by_sponsored_by,
+        "by_sponsored_by": {},
         "by_proceed_reason": by_proceed_reason,
     }
 
