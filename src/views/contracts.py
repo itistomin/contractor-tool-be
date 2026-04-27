@@ -96,6 +96,9 @@ class ContractRequest(BaseModel):
     zip: Optional[str] = None
     city: Optional[str] = None
     fuel_type: Optional[str] = None
+    client_name: Optional[str] = None
+    client_email: Optional[str] = None
+    phone_number: Optional[str] = None
     hancock_project_id: Optional[str] = None
     auditor_id: Optional[str] = None
     multifamily_values: Optional[list[str]] = None
@@ -118,6 +121,9 @@ class ContractResponse(BaseModel):
     sponsored_by: Optional[str] = None
     hancock_project_id: Optional[str] = None
     auditor_id: Optional[str] = None
+    client_name: Optional[str] = None
+    client_email: Optional[str] = None
+    phone_number: Optional[str] = None
     multifamily_values: Optional[list[str]] = None
     date: Optional[str] = None
     start_at_time: Optional[str] = None
@@ -320,6 +326,9 @@ async def get_all_contracts(
             sponsored_by=contract.sponsored_by or "other",
             hancock_project_id=contract.hancock_project_id,
             auditor_id=contract.auditor_id,
+            client_name=contract.client_name,
+            client_email=contract.client_email,
+            phone_number=contract.phone_number,
             multifamily_values=contract.multifamily_values,
             date=contract.date.isoformat() if contract.date else None,
             start_at_time=contract.start_at_time.isoformat() if contract.start_at_time else None,
@@ -361,6 +370,9 @@ async def get_contract(
         sponsored_by=contract.sponsored_by or "other",
         hancock_project_id=contract.hancock_project_id,
         auditor_id=contract.auditor_id,
+        client_name=contract.client_name,
+        client_email=contract.client_email,
+        phone_number=contract.phone_number,
         multifamily_values=contract.multifamily_values,
         date=contract.date.isoformat() if contract.date else None,
         start_at_time=contract.start_at_time.isoformat() if contract.start_at_time else None,
@@ -400,6 +412,9 @@ async def patch_contract_status(
         sponsored_by=contract.sponsored_by or "other",
         hancock_project_id=contract.hancock_project_id,
         auditor_id=contract.auditor_id,
+        client_name=contract.client_name,
+        client_email=contract.client_email,
+        phone_number=contract.phone_number,
         multifamily_values=contract.multifamily_values,
         date=contract.date.isoformat() if contract.date else None,
         start_at_time=contract.start_at_time.isoformat() if contract.start_at_time else None,
@@ -533,6 +548,9 @@ async def submit_contract(
             zip=contract_data.zip,
             city=contract_data.city,
             fuel_type=contract_data.fuel_type,
+            client_name=contract_data.client_name,
+            client_email=contract_data.client_email,
+            phone_number=contract_data.phone_number,
             hancock_project_id=contract_data.hancock_project_id,
             date=contract_data.date,
             start_at_time=contract_data.start_at_time,
@@ -571,6 +589,9 @@ async def submit_contract(
             invoice_doc=contract_data.invoice_doc,
             form_stage=contract_data.form_stage,
             r2=contract_data.r2,
+            client_name=contract_data.client_name,
+            client_email=contract_data.client_email,
+            phone_number=contract_data.phone_number,
         )
         if contract and (contract.auditor_id or "").strip() != "":
             try:
@@ -588,6 +609,9 @@ async def submit_contract(
         sponsored_by=contract.sponsored_by or "other",
         hancock_project_id=contract.hancock_project_id,
         auditor_id=contract.auditor_id,
+        client_name=contract.client_name,
+        client_email=contract.client_email,
+        phone_number=contract.phone_number,
         multifamily_values=contract.multifamily_values,
         date=contract.date.isoformat() if contract.date else None,
         start_at_time=contract.start_at_time.isoformat() if contract.start_at_time else None,
@@ -665,6 +689,9 @@ async def upload_inspection_doc(
             sponsored_by=updated_contract.sponsored_by or "other",
             hancock_project_id=updated_contract.hancock_project_id,
             auditor_id=updated_contract.auditor_id,
+            client_name=updated_contract.client_name,
+            client_email=updated_contract.client_email,
+            phone_number=updated_contract.phone_number,
             multifamily_values=updated_contract.multifamily_values,
             date=updated_contract.date.isoformat() if updated_contract.date else None,
             start_at_time=updated_contract.start_at_time.isoformat() if updated_contract.start_at_time else None,
@@ -753,6 +780,9 @@ async def upload_invoice_doc(
             sponsored_by=updated_contract.sponsored_by or "other",
             hancock_project_id=updated_contract.hancock_project_id,
             auditor_id=updated_contract.auditor_id,
+            client_name=updated_contract.client_name,
+            client_email=updated_contract.client_email,
+            phone_number=updated_contract.phone_number,
             multifamily_values=updated_contract.multifamily_values,
             date=updated_contract.date.isoformat() if updated_contract.date else None,
             start_at_time=updated_contract.start_at_time.isoformat() if updated_contract.start_at_time else None,
