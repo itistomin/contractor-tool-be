@@ -202,13 +202,10 @@ class ProceedReasonStats(BaseModel):
 
 class ContractStatisticsResponse(BaseModel):
     total: int
-    by_form_stage: dict[str, int]
     by_status: dict[str, int]
     by_zip_code: dict[str, int]
     by_city: dict[str, int]
-    by_sponsored_by: dict[str, SponsoredByStats]
-    by_proceed_reason: dict[str, ProceedReasonStats]
-
+    pipeline_breakdown: dict[str, dict[str, dict[str, int]]]
 
 @router.get("/statistics", response_model=ContractStatisticsResponse)
 async def get_statistics(
@@ -218,12 +215,10 @@ async def get_statistics(
     stats = await get_contract_statistics(db)
     return ContractStatisticsResponse(
         total=stats["total"],
-        by_form_stage=stats["by_form_stage"],
         by_status=stats["by_status"],
         by_zip_code=stats["by_zip_code"],
         by_city=stats["by_city"],
-        by_sponsored_by=stats["by_sponsored_by"],
-        by_proceed_reason=stats["by_proceed_reason"],
+        pipeline_breakdown=stats["pipeline_breakdown"],
     )
 
 

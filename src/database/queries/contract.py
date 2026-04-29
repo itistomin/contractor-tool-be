@@ -452,21 +452,13 @@ async def get_contract_statistics(
     Returns:
         {
             "total": int,
-            "by_form_stage": { "<stage>": int, ... },
             "by_status": { "open": int, "cancelled": int, "completed": int },
             "by_zip_code": { "<zip>": int, ... },
             "by_city": { "<city>": int, ... },
-        "by_sponsored_by": { "<sponsor>": { "total": int, "fuel": { "<fuel_type>": int } }, ... },
-        "by_proceed_reason": { "<reason>": { "count": int, "by_sponsored_by": { "<sponsor>": { "total": int, "fuel": { "<fuel_type>": int } } } }, ... }
         }
     """
     total_result = await db.execute(select(func.count(Contract.id)))
     total = total_result.scalar_one() or 0
-
-    form_stage_result = await db.execute(
-        select(Contract.form_stage, func.count(Contract.id)).group_by(Contract.form_stage)
-    )
-    by_form_stage = {row[0] or "": row[1] for row in form_stage_result.all()}
 
     status_result = await db.execute(
         select(Contract.status, func.count(Contract.id)).group_by(Contract.status)
@@ -502,76 +494,79 @@ async def get_contract_statistics(
     if len(by_city) > 5:
         by_city = dict(sorted(by_city.items(), key=lambda kv: kv[1], reverse=True)[:5])
 
-    sponsored_by_fuel_result = await db.execute(
+    # Pipeline breakdown: bucket by sponsored_by first, then by contract fuel_type.
+    # Output shape:
+    # {
+    #   "Providers": { "<sponsored_by>": { "<fuel_type>": int, ... }, ... },
+    #   "Low Income": { ... },
+    #   "Others": { ... },
+    # }
+    sponsored_expr = func.coalesce(Contract.sponsored_by, literal("Unknown")).label(
+        "sponsored_by"
+    )
+    fuel_expr = func.coalesce(Contract.fuel_type, literal("Unknown")).label("fuel_type")
+    pipeline_rows_result = await db.execute(
         select(
-            Contract.sponsored_by,
-            Contract.fuel_type,
-            func.count(Contract.id),
-        )
-        .group_by(Contract.sponsored_by, Contract.fuel_type)
+            sponsored_expr,
+            fuel_expr,
+            func.count(Contract.id).label("count"),
+        ).group_by(sponsored_expr, fuel_expr)
     )
-    by_sponsored_by = {}
-    for row in sponsored_by_fuel_result.all():
-        sponsor_key = row[0] or "other"
-        fuel_key = row[1] or ""
-        count = row[2]
-        if sponsor_key not in by_sponsored_by:
-            by_sponsored_by[sponsor_key] = {"total": 0, "fuel": {}}
-        by_sponsored_by[sponsor_key]["total"] += count
-        by_sponsored_by[sponsor_key]["fuel"][fuel_key] = (
-            by_sponsored_by[sponsor_key]["fuel"].get(fuel_key, 0) + count
+    pipeline_rows: list[tuple[str, str, int]] = [
+        (str(row[0] or "Unknown"), str(row[1] or "Unknown"), int(row[2] or 0))
+        for row in pipeline_rows_result.all()
+    ]
+
+    PROVIDERS_SPONSORS = {
+        "Eversource",
+        "Eversource Electric",
+        "Eversource Gas",
+        "Eversource Gas Co. of MA",
+        "National Grid",
+        "National Grid Electric",
+        "National Grid Gas",
+    }
+    OTHERS_SPONSORS = {
+        "Berkshire Gas",
+        "Cape Light Compact",
+        "Liberty Utilities",
+        "Unitil",
+        "Municipal",
+    }
+
+    def _pipeline_bucket(sponsored_by: str) -> str:
+        s = (sponsored_by or "").strip()
+        s_lower = s.lower()
+        if "low income" in s_lower or s_lower.startswith("li "):
+            return "Low Income"
+        if s in PROVIDERS_SPONSORS:
+            return "Providers"
+        if s in OTHERS_SPONSORS:
+            return "Others"
+        if s == "" or s == "Unknown":
+            return "Others"
+        # Default: anything not recognized is treated as "Others"
+        return "Others"
+
+    pipeline_breakdown: dict[str, dict[str, dict[str, int]]] = {
+        "Providers": {},
+        "Low Income": {},
+        "Others": {},
+    }
+    for sponsored_by, fuel_type, count in pipeline_rows:
+        bucket = _pipeline_bucket(sponsored_by)
+        pipeline_breakdown.setdefault(bucket, {})
+        pipeline_breakdown[bucket].setdefault(sponsored_by, {})
+        pipeline_breakdown[bucket][sponsored_by][fuel_type] = (
+            pipeline_breakdown[bucket][sponsored_by].get(fuel_type, 0) + count
         )
-
-    proceed_reason_key = func.coalesce(ZipProfiles.proceed_reason, literal("Out of Scope"))
-    proceed_reason_result = await db.execute(
-        select(proceed_reason_key, func.count(distinct(Contract.id)))
-        .select_from(Contract)
-        .outerjoin(ZipProfiles, Contract.zip == ZipProfiles.zip_code)
-        .group_by(proceed_reason_key)
-    )
-    proceed_reason_counts = {str(row[0] or "").strip(): int(row[1] or 0) for row in proceed_reason_result.all()}
-    proceed_reason_sponsored_by_fuel_result = await db.execute(
-        select(
-            proceed_reason_key,
-            Contract.sponsored_by,
-            Contract.fuel_type,
-            func.count(Contract.id),
-        )
-        .select_from(Contract)
-        .outerjoin(ZipProfiles, Contract.zip == ZipProfiles.zip_code)
-        .group_by(proceed_reason_key, Contract.sponsored_by, Contract.fuel_type)
-    )
-
-    by_proceed_reason: dict[str, dict] = {}
-    for reason, count in proceed_reason_counts.items():
-        if reason == "" or count <= 0:
-            continue
-        by_proceed_reason[reason] = {"count": count, "by_sponsored_by": {}}
-
-    for row in proceed_reason_sponsored_by_fuel_result.all():
-        reason_key = str(row[0] or "").strip()
-        if reason_key == "" or proceed_reason_counts.get(reason_key, 0) <= 0:
-            continue
-        sponsor_key = row[1] or "other"
-        fuel_key = row[2] or ""
-        count = int(row[3] or 0)
-        if count <= 0:
-            continue
-
-        sponsor_bucket = by_proceed_reason[reason_key]["by_sponsored_by"].setdefault(
-            sponsor_key, {"total": 0, "fuel": {}}
-        )
-        sponsor_bucket["total"] += count
-        sponsor_bucket["fuel"][fuel_key] = sponsor_bucket["fuel"].get(fuel_key, 0) + count
 
     return {
         "total": total,
-        "by_form_stage": by_form_stage,
         "by_status": by_status,
         "by_zip_code": by_zip_code,
         "by_city": by_city,
-        "by_sponsored_by": {},
-        "by_proceed_reason": by_proceed_reason,
+        "pipeline_breakdown": pipeline_breakdown,
     }
 
 
