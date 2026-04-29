@@ -10,7 +10,7 @@ from fastapi import (
 from datetime import datetime, timedelta
 from typing import Literal, Optional
 from urllib.parse import urlencode
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 
 from database.connection import get_db
 from database.queries.contract import (
@@ -95,10 +95,15 @@ class ContractRequest(BaseModel):
     contract_id: Optional[str] = None
     zip: Optional[str] = None
     city: Optional[str] = None
+    street_address: Optional[str] = None
+    notes: Optional[str] = None
     fuel_type: Optional[str] = None
     client_name: Optional[str] = None
     client_email: Optional[str] = None
-    phone_number: Optional[str] = None
+    phone_number: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("phone_number", "client_phone"),
+    )
     hancock_project_id: Optional[str] = None
     auditor_id: Optional[str] = None
     multifamily_values: Optional[list[str]] = None
@@ -117,6 +122,8 @@ class ContractResponse(BaseModel):
     user_id: str
     zip: Optional[str] = None
     city: Optional[str] = None
+    street_address: Optional[str] = None
+    notes: Optional[str] = None
     fuel_type: Optional[str] = None
     sponsored_by: Optional[str] = None
     hancock_project_id: Optional[str] = None
@@ -147,6 +154,8 @@ class ContractListItem(BaseModel):
     id: str
     zip: Optional[str] = None
     city: Optional[str] = None
+    street_address: Optional[str] = None
+    notes: Optional[str] = None
     fuel_type: Optional[str] = None
     sponsored_by: Optional[str] = None
     hancock_project_id: Optional[str] = None
@@ -285,6 +294,8 @@ async def list_contracts(
                 id=contract.id,
                 zip=contract.zip,
                 city=contract.city,
+                street_address=contract.street_address,
+                notes=contract.notes,
                 fuel_type=contract.fuel_type,
                 sponsored_by=contract.sponsored_by or "other",
                 hancock_project_id=contract.hancock_project_id,
@@ -322,6 +333,8 @@ async def get_all_contracts(
             user_id=contract.user_id,
             zip=contract.zip,
             city=contract.city,
+            street_address=contract.street_address,
+            notes=contract.notes,
             fuel_type=contract.fuel_type,
             sponsored_by=contract.sponsored_by or "other",
             hancock_project_id=contract.hancock_project_id,
@@ -366,6 +379,8 @@ async def get_contract(
         user_id=contract.user_id,
         zip=contract.zip,
         city=contract.city,
+        street_address=contract.street_address,
+        notes=contract.notes,
         fuel_type=contract.fuel_type,
         sponsored_by=contract.sponsored_by or "other",
         hancock_project_id=contract.hancock_project_id,
@@ -408,6 +423,8 @@ async def patch_contract_status(
         user_id=contract.user_id,
         zip=contract.zip,
         city=contract.city,
+        street_address=contract.street_address,
+        notes=contract.notes,
         fuel_type=contract.fuel_type,
         sponsored_by=contract.sponsored_by or "other",
         hancock_project_id=contract.hancock_project_id,
@@ -547,6 +564,8 @@ async def submit_contract(
             user_id=contract_data.user_id,
             zip=contract_data.zip,
             city=contract_data.city,
+            street_address=contract_data.street_address,
+            notes=contract_data.notes,
             fuel_type=contract_data.fuel_type,
             client_name=contract_data.client_name,
             client_email=contract_data.client_email,
@@ -577,6 +596,8 @@ async def submit_contract(
             user_id=contract_data.user_id,
             zip=contract_data.zip,
             city=contract_data.city,
+            street_address=contract_data.street_address,
+            notes=contract_data.notes,
             fuel_type=contract_data.fuel_type,
             hancock_project_id=contract_data.hancock_project_id,
             auditor_id=contract_data.auditor_id,
@@ -605,6 +626,8 @@ async def submit_contract(
         user_id=contract.user_id,
         zip=contract.zip,
         city=contract.city,
+        street_address=contract.street_address,
+        notes=contract.notes,
         fuel_type=contract.fuel_type,
         sponsored_by=contract.sponsored_by or "other",
         hancock_project_id=contract.hancock_project_id,
@@ -685,6 +708,8 @@ async def upload_inspection_doc(
             user_id=updated_contract.user_id,
             zip=updated_contract.zip,
             city=updated_contract.city,
+            street_address=updated_contract.street_address,
+            notes=updated_contract.notes,
             fuel_type=updated_contract.fuel_type,
             sponsored_by=updated_contract.sponsored_by or "other",
             hancock_project_id=updated_contract.hancock_project_id,
@@ -776,6 +801,8 @@ async def upload_invoice_doc(
             user_id=updated_contract.user_id,
             zip=updated_contract.zip,
             city=updated_contract.city,
+            street_address=updated_contract.street_address,
+            notes=updated_contract.notes,
             fuel_type=updated_contract.fuel_type,
             sponsored_by=updated_contract.sponsored_by or "other",
             hancock_project_id=updated_contract.hancock_project_id,

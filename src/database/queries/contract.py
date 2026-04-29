@@ -177,6 +177,8 @@ async def create_contract(
     user_id: str,
     zip: str | None = None,
     city: str | None = None,
+    street_address: str | None = None,
+    notes: str | None = None,
     fuel_type: str | None = None,
     hancock_project_id: str | None = None,
     auditor_id: str | None = None,
@@ -247,6 +249,8 @@ async def create_contract(
         "user_id": user_id,
         "zip": zip,
         "city": city,
+        "street_address": street_address,
+        "notes": notes,
         "fuel_type": fuel_type,
         "sponsored_by": sponsored_by,
         "hancock_project_id": hancock_project_id,
@@ -297,6 +301,8 @@ async def update_contract(
     user_id: str | None = None,
     zip: str | None = None,
     city: str | None = None,
+    street_address: str | None = None,
+    notes: str | None = None,
     fuel_type: str | None = None,
     hancock_project_id: str | None = None,
     auditor_id: str | None | type[_Unset] = _UNSET,
@@ -330,6 +336,10 @@ async def update_contract(
         update_data["zip"] = zip
     if city is not None:
         update_data["city"] = city
+    if street_address is not None:
+        update_data["street_address"] = street_address
+    if notes is not None:
+        update_data["notes"] = notes
     if fuel_type is not None:
         update_data["fuel_type"] = fuel_type
     if hancock_project_id is not None:

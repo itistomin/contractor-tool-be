@@ -49,6 +49,8 @@ class Contract(Base):
     
     zip: Mapped[str | None] = mapped_column(nullable=True)
     city: Mapped[str | None] = mapped_column(nullable=True)
+    street_address: Mapped[str | None] = mapped_column(nullable=True)
+    notes: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     fuel_type: Mapped[str | None] = mapped_column(nullable=True)
     sponsored_by: Mapped[str | None] = mapped_column(nullable=True)
     
