@@ -447,15 +447,8 @@ async def get_contract_statistics(
     db: AsyncSession,
 ) -> dict:
     """
-    Return contract statistics: total count, counts per form_stage, per status,
-    per zip_code, per city, per sponsored_by, and per proceed_reason (via zip_profiles join).
-    Returns:
-        {
-            "total": int,
-            "by_status": { "open": int, "cancelled": int, "completed": int },
-            "by_zip_code": { "<zip>": int, ... },
-            "by_city": { "<city>": int, ... },
-        }
+    Dashboard statistics plus `sponsor_substring_project_counts`: nested provider/fuel
+    counts (all contracts vs `r2` low-income slice) and per–other-sponsor counts (ints).
     """
     total_result = await db.execute(select(func.count(Contract.id)))
     total = total_result.scalar_one() or 0
@@ -494,79 +487,73 @@ async def get_contract_statistics(
     if len(by_city) > 5:
         by_city = dict(sorted(by_city.items(), key=lambda kv: kv[1], reverse=True)[:5])
 
-    # Pipeline breakdown: bucket by sponsored_by first, then by contract fuel_type.
-    # Output shape:
-    # {
-    #   "Providers": { "<sponsored_by>": { "<fuel_type>": int, ... }, ... },
-    #   "Low Income": { ... },
-    #   "Others": { ... },
-    # }
-    sponsored_expr = func.coalesce(Contract.sponsored_by, literal("Unknown")).label(
-        "sponsored_by"
-    )
-    fuel_expr = func.coalesce(Contract.fuel_type, literal("Unknown")).label("fuel_type")
-    pipeline_rows_result = await db.execute(
-        select(
-            sponsored_expr,
-            fuel_expr,
-            func.count(Contract.id).label("count"),
-        ).group_by(sponsored_expr, fuel_expr)
-    )
-    pipeline_rows: list[tuple[str, str, int]] = [
-        (str(row[0] or "Unknown"), str(row[1] or "Unknown"), int(row[2] or 0))
-        for row in pipeline_rows_result.all()
-    ]
+    async def _scalar_count(*where_args):
+        r = await db.execute(select(func.count(Contract.id)).where(*where_args))
+        return int(r.scalar_one() or 0)
 
-    PROVIDERS_SPONSORS = {
-        "Eversource",
-        "Eversource Electric",
-        "Eversource Gas",
-        "Eversource Gas Co. of MA",
-        "National Grid",
-        "National Grid Electric",
-        "National Grid Gas",
-    }
-    OTHERS_SPONSORS = {
-        "Berkshire Gas",
-        "Cape Light Compact",
-        "Liberty Utilities",
-        "Unitil",
-        "Municipal",
-    }
+    async def _provider_combination_counts(is_low_income: bool = False) -> dict:
+        li = (Contract.r2.is_(True),) if is_low_income else ()
 
-    def _pipeline_bucket(sponsored_by: str) -> str:
-        s = (sponsored_by or "").strip()
-        s_lower = s.lower()
-        if "low income" in s_lower or s_lower.startswith("li "):
-            return "Low Income"
-        if s in PROVIDERS_SPONSORS:
-            return "Providers"
-        if s in OTHERS_SPONSORS:
-            return "Others"
-        if s == "" or s == "Unknown":
-            return "Others"
-        # Default: anything not recognized is treated as "Others"
-        return "Others"
+        def wc(*parts):
+            return (*parts, *li)
 
-    pipeline_breakdown: dict[str, dict[str, dict[str, int]]] = {
-        "Providers": {},
-        "Low Income": {},
-        "Others": {},
-    }
-    for sponsored_by, fuel_type, count in pipeline_rows:
-        bucket = _pipeline_bucket(sponsored_by)
-        pipeline_breakdown.setdefault(bucket, {})
-        pipeline_breakdown[bucket].setdefault(sponsored_by, {})
-        pipeline_breakdown[bucket][sponsored_by][fuel_type] = (
-            pipeline_breakdown[bucket][sponsored_by].get(fuel_type, 0) + count
+        ev = icontains(Contract.sponsored_by, "Eversource")
+        ng = icontains(Contract.sponsored_by, "National Grid")
+
+        eversource_electric = await _scalar_count(
+            *wc(ev, icontains(Contract.fuel_type, "Electric"))
         )
+        eversource_gas = await _scalar_count(*wc(ev, icontains(Contract.fuel_type, "Gas")))
+        eversource_egma = await _scalar_count(*wc(ev, icontains(Contract.fuel_type, "EGMA")))
+
+        national_grid_electric = await _scalar_count(
+            *wc(ng, icontains(Contract.fuel_type, "Electric"))
+        )
+        national_grid_gas = await _scalar_count(
+            *wc(ng, icontains(Contract.fuel_type, "Gas"))
+        )
+        return {
+            "Eversource": {
+                "Eversource Electric": eversource_electric,
+                "Eversource Gas": eversource_gas,
+                "Eversource EGMA": eversource_egma,
+            },
+            "National Grid": {
+                "National Grid Electric": national_grid_electric,
+                "National Grid Gas": national_grid_gas,
+            },
+        }
+
+    async def get_others():
+        berkshire_gas = await _scalar_count(icontains(Contract.sponsored_by, "Berkshire Gas"))
+        cape_light_compact = await _scalar_count(
+            icontains(Contract.sponsored_by, "Cape Light Compact")
+        )
+        liberty_utilities = await _scalar_count(
+            icontains(Contract.sponsored_by, "Liberty Utilities")
+        )
+        unitil = await _scalar_count(icontains(Contract.sponsored_by, "Unitil"))
+        municipal = await _scalar_count(icontains(Contract.sponsored_by, "Municipal"))
+        return {
+            "Berkshire Gas": berkshire_gas,
+            "Cape Light Compact": cape_light_compact,
+            "Liberty Utilities": liberty_utilities,
+            "Unitil": unitil,
+            "Municipal": municipal,
+        }
+
+    sponsor_substring_project_counts = {
+        "providers": await _provider_combination_counts(False),
+        "low_income": await _provider_combination_counts(True),
+        "others": await get_others(),
+    }
 
     return {
         "total": total,
         "by_status": by_status,
         "by_zip_code": by_zip_code,
         "by_city": by_city,
-        "pipeline_breakdown": pipeline_breakdown,
+        "sponsor_substring_project_counts": sponsor_substring_project_counts,
     }
 
 

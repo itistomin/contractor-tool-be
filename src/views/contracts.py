@@ -10,7 +10,7 @@ from fastapi import (
 from datetime import datetime, timedelta
 from typing import Literal, Optional
 from urllib.parse import urlencode
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from database.connection import get_db
 from database.queries.contract import (
@@ -200,25 +200,65 @@ class ProceedReasonStats(BaseModel):
     by_sponsored_by: dict[str, SponsoredByStats]
 
 
+class EversourceSponsorBreakdown(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    eversource_electric: int = Field(alias="Eversource Electric")
+    eversource_gas: int = Field(alias="Eversource Gas")
+    eversource_egma: int = Field(alias="Eversource EGMA")
+
+
+class NationalGridSponsorBreakdown(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    national_grid_electric: int = Field(alias="National Grid Electric")
+    national_grid_gas: int = Field(alias="National Grid Gas")
+
+
+class ProviderSponsorCombinations(BaseModel):
+    """Eversource + National Grid contract counts by sponsor × fuel-type (no roll-up totals)."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    eversource: EversourceSponsorBreakdown = Field(alias="Eversource")
+    national_grid: NationalGridSponsorBreakdown = Field(alias="National Grid")
+
+
+class OtherSponsorCombinations(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    berkshire_gas: int = Field(alias="Berkshire Gas")
+    cape_light_compact: int = Field(alias="Cape Light Compact")
+    liberty_utilities: int = Field(alias="Liberty Utilities")
+    unitil: int = Field(alias="Unitil")
+    municipal: int = Field(alias="Municipal")
+
+
+class SponsorSubstringProjectCounts(BaseModel):
+    """Mirrors `get_contract_statistics`: all-contract providers, `r2` slice, and other sponsors."""
+
+    model_config = ConfigDict(extra="forbid")
+    providers: ProviderSponsorCombinations
+    low_income: ProviderSponsorCombinations
+    others: OtherSponsorCombinations
+
+
 class ContractStatisticsResponse(BaseModel):
     total: int
     by_status: dict[str, int]
     by_zip_code: dict[str, int]
     by_city: dict[str, int]
-    pipeline_breakdown: dict[str, dict[str, dict[str, int]]]
+    sponsor_substring_project_counts: SponsorSubstringProjectCounts
+
 
 @router.get("/statistics", response_model=ContractStatisticsResponse)
 async def get_statistics(
     db: AsyncSession = Depends(get_db),
 ):
-    """Return contract statistics: total count, counts per form stage, status, zip code, city, sponsored_by, and proceed_reason."""
+    """Return dashboard statistics: totals, status/zip/city breakdowns, and sponsor combination counts."""
     stats = await get_contract_statistics(db)
     return ContractStatisticsResponse(
         total=stats["total"],
         by_status=stats["by_status"],
         by_zip_code=stats["by_zip_code"],
         by_city=stats["by_city"],
-        pipeline_breakdown=stats["pipeline_breakdown"],
+        sponsor_substring_project_counts=stats["sponsor_substring_project_counts"],
     )
 
 
